@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -15,16 +14,70 @@ import {
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import axios from 'axios';
 import { storage } from '../utils/storage';
+import { PageTitle, PageSubtitle } from '../components/Typography';
+import { PrimaryButton } from '../components/Button';
+import { Fonts } from '../theme/typography';
 
 // Replace with your actual backend URL
 const BACKEND_URL = "https://freshrun-backend.onrender.com";
+const OTP_REQUEST_TIMEOUT_MS = 30000;
+const BACKEND_REQUEST_TIMEOUT_MS = 15000;
 
 interface LoginScreenProps {
   onLoginSuccess: (token: string, user: any) => void;
   role: 'customer' | 'delivery';
+  onNavigateToRegister: () => void;
 }
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role }) => {
+const withTimeout = async <T,>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
+
+const getAuthErrorMessage = (error: any, fallbackMessage: string) => {
+  const errorCode = error?.code;
+  const errorMessage = error?.message;
+
+  if (errorCode === 'auth/invalid-phone-number') {
+    return 'Please enter a valid phone number.';
+  }
+
+  if (errorCode === 'auth/too-many-requests') {
+    return 'Too many OTP attempts. Please wait a bit and try again.';
+  }
+
+  if (errorCode === 'auth/network-request-failed') {
+    return 'Network error while contacting Firebase. Please check your internet and try again.';
+  }
+
+  if (errorCode === 'auth/invalid-verification-code') {
+    return 'The OTP you entered is invalid. Please try again.';
+  }
+
+  if (errorCode === 'auth/code-expired') {
+    return 'This OTP has expired. Please request a new one.';
+  }
+
+  return errorMessage || fallbackMessage;
+};
+
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavigateToRegister }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [code, setCode] = useState('');
   const [confirm, setConfirm] =
@@ -33,20 +86,28 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role }) => {
 
   // STEP 1: Send OTP
   const signInWithPhoneNumber = async () => {
-    if (!phoneNumber || phoneNumber.length < 10) {
-      Alert.alert('Error', 'Please enter a valid phone number');
-      return;
-    }
-
-    const formattedNumber = `+91${phoneNumber}`;
-    setLoading(true);
     try {
-      const confirmation = await auth().signInWithPhoneNumber(formattedNumber);
+      const sanitizedPhone = phoneNumber.replace(/\D/g, '');
+      if (!sanitizedPhone || sanitizedPhone.length < 10) {
+        Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+        return;
+      }
+
+      const formattedNumber = `+91${sanitizedPhone}`;
+      console.log('Attempting to send OTP to:', formattedNumber);
+      
+      setLoading(true);
+      const confirmation = await withTimeout(
+        auth().signInWithPhoneNumber(formattedNumber),
+        OTP_REQUEST_TIMEOUT_MS,
+        'OTP request timed out. Please try again.',
+      );
+      
+      console.log('OTP Sent successfully to:', formattedNumber);
       setConfirm(confirmation);
-      console.log('OTP Sent to:', formattedNumber);
     } catch (error: any) {
-      console.error('Send OTP Error:', error);
-      Alert.alert('Login Failed', error.message || 'Could not send OTP');
+      console.error('Send OTP Error details:', error);
+      Alert.alert('Login Failed', getAuthErrorMessage(error, 'Could not send OTP'));
     } finally {
       setLoading(false);
     }
@@ -61,27 +122,39 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role }) => {
 
     setLoading(true);
     try {
-      if (!confirm) return;
+      if (!confirm) {
+        console.error('Confirm object is null');
+        return;
+      }
       
+      console.log('Verifying code:', code);
       // Verify OTP with Firebase
       const credential = await confirm.confirm(code);
       
       if (credential?.user) {
         // Get ID Token
-        const idToken = await credential.user.getIdToken();
+        const idToken = await withTimeout(
+          credential.user.getIdToken(),
+          BACKEND_REQUEST_TIMEOUT_MS,
+          'Timed out while fetching the Firebase token. Please try again.',
+        );
         console.log('Firebase verified. Exchanging for JWT...');
 
-        console.log("Sending token to backend:", idToken);
-        console.log("Backend URL:", BACKEND_URL);
-
         // Call Backend
-        const response = await axios.post(`${BACKEND_URL}/auth/login`, {
-          idToken,
-          role,
-        });
+        const response = await axios.post(
+          `${BACKEND_URL}/auth/login`,
+          {
+            idToken,
+            role,
+          },
+          {
+            timeout: BACKEND_REQUEST_TIMEOUT_MS,
+          },
+        );
 
         if (response.data.success) {
           const { token, user } = response.data;
+          console.log('Backend login success');
           
           // Store JWT
           storage.setItem('userToken', token);
@@ -93,8 +166,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role }) => {
         }
       }
     } catch (error: any) {
-      console.error('Verification Error:', error);
-      Alert.alert('Verification Failed', error.message || 'Invalid OTP');
+      console.error('Verification Error details:', error);
+      const message = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message || 'Backend authentication failed'
+        : getAuthErrorMessage(error, 'Invalid OTP');
+      Alert.alert('Verification Failed', message);
     } finally {
       setLoading(false);
     }
@@ -109,65 +185,71 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role }) => {
         <View style={styles.content}>
           <View style={styles.topContainer}>
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>
-                {!confirm ? "Enter your phone\nnumber" : "Verify OTP"}
-              </Text>
+              <PageTitle>Welcome Back!</PageTitle>
+              <PageSubtitle>Sign in to your delivery partner account.</PageSubtitle>
             </View>
 
             <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>
-                {!confirm ? "Phone Number" : "Enter Code"}
-              </Text>
-              
-              <View style={styles.inputWrapper}>
-                {!confirm && (
-                  <View style={styles.countryPicker}>
-                    <Text style={styles.flag}>🇮🇳</Text>
-                    <Text style={styles.countryCode}>(+91)</Text>
-                    <Text style={styles.dropdownIcon}>⌵</Text>
+              {!confirm ? (
+                <View style={styles.inputContainer}>
+                  <View style={styles.inputWrapper}>
+                    <View style={styles.countryPicker}>
+                      <Text style={styles.flag}>🇮🇳</Text>
+                      <Text style={styles.countryCode}>(+91)</Text>
+                    </View>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Enter phone number"
+                      value={phoneNumber}
+                      onChangeText={setPhoneNumber}
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                      placeholderTextColor="#999"
+                    />
                   </View>
-                )}
-                
-                <TextInput
-                  style={styles.textInput}
-                  placeholder={!confirm ? "9876543210" : "123456"}
-                  value={!confirm ? phoneNumber : code}
-                  onChangeText={!confirm ? setPhoneNumber : setCode}
-                  keyboardType={!confirm ? "phone-pad" : "number-pad"}
-                  maxLength={!confirm ? 10 : 6}
-                  placeholderTextColor="#ccc"
-                />
-              </View>
+                </View>
+              ) : (
+                <View style={styles.inputContainer}>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="Enter OTP Code"
+                      value={code}
+                      onChangeText={setCode}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      placeholderTextColor="#999"
+                      secureTextEntry={false}
+                    />
+                  </View>
+                  <TouchableOpacity style={styles.forgotPassword} onPress={() => setConfirm(null)}>
+                    <Text style={styles.forgotPasswordText}>Change Phone Number?</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
+
+            <PrimaryButton 
+              title={!confirm ? "Sign in" : "Verify OTP"}
+              onPress={!confirm ? signInWithPhoneNumber : confirmCode}
+              loading={loading}
+            />
           </View>
 
-          <View style={styles.bottomContainer}>
-            <TouchableOpacity 
-              style={styles.mainButton} 
-              onPress={!confirm ? signInWithPhoneNumber : confirmCode}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  {!confirm ? "Log in" : "Verify & Login"}
-                </Text>
-              )}
-            </TouchableOpacity>
+          <View style={styles.imageContainer}>
+            <Image 
+              source={require('../assets/login_page_delivery.png')} 
+              style={styles.loginImage}
+              resizeMode="contain"
+            />
+          </View>
 
-            {!confirm ? (
-              <View style={styles.footer}>
-                <Text style={styles.footerText}>Don't have an account? </Text>
-                <TouchableOpacity>
-                  <Text style={styles.linkText}>Create Account</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity onPress={() => setConfirm(null)} style={styles.backButton}>
-                <Text style={styles.backText}>Change Phone Number</Text>
-              </TouchableOpacity>
-            )}
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>New to FreshRun? </Text>
+            <TouchableOpacity onPress={onNavigateToRegister}>
+              <Text style={styles.linkText}>Register as Partner</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -185,10 +267,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 30,
-    paddingTop: 80,
-    paddingBottom: 30,
-    justifyContent: 'space-between',
+    paddingHorizontal: 25,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
   topContainer: {
     flex: 1,
@@ -196,102 +277,78 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 40,
   },
-  headerTitle: {
-    fontSize: 36,
-    fontFamily: 'Inter-Bold',
-    color: '#1a1a1a',
-    lineHeight: 44,
-  },
   inputSection: {
-    marginTop: 10,
+    marginBottom: 20,
   },
-  inputLabel: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1a1a1a',
-    marginBottom: 12,
+  inputContainer: {
+    marginBottom: 15,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#f0f0f0',
-    borderRadius: 15,
+    borderColor: '#E5E5E5',
+    borderRadius: 12,
     paddingHorizontal: 15,
-    height: 65,
+    height: 60,
     backgroundColor: '#fff',
-    marginBottom: 20,
   },
   countryPicker: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRightWidth: 1,
-    borderRightColor: '#eee',
-    paddingRight: 10,
     marginRight: 10,
-    height: '60%',
   },
   flag: {
-    fontSize: 20,
-    marginRight: 8,
+    fontSize: 18,
+    marginRight: 5,
   },
   countryCode: {
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#1a1a1a',
-    marginRight: 5,
-  },
-  dropdownIcon: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 2,
+    fontFamily: Fonts.regular,
+    color: '#000',
   },
   textInput: {
     flex: 1,
-    fontSize: 18,
-    fontFamily: 'Inter-Regular',
-    color: '#1a1a1a',
-    padding: 0,
+    fontSize: 16,
+    fontFamily: Fonts.regular,
+    color: '#000',
   },
-  bottomContainer: {
-    marginTop: 20,
+  forgotPassword: {
+    alignItems: 'flex-end',
+    marginTop: 10,
   },
-  mainButton: {
-    backgroundColor: '#60c547',
-    height: 60,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontFamily: 'Inter-Bold',
+  forgotPasswordText: {
+    fontSize: 14,
+    fontFamily: Fonts.medium,
+    color: '#666',
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 25,
+    alignItems: 'center',
   },
   footerText: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#666',
+    fontFamily: Fonts.regular,
+    color: '#000',
   },
   linkText: {
     fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#3b5998',
+    fontFamily: Fonts.bold,
+    color: '#60c547',
+    textDecorationLine: 'underline',
   },
-  backButton: {
-    marginTop: 20,
+  imageContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    marginVertical: 10,
   },
-  backText: {
-    color: '#666',
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
+  loginImage: {
+    width: '100%',
+    height: '100%',
   },
 });
+
 
 export default LoginScreen;
