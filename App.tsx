@@ -11,7 +11,11 @@ import { storage } from './src/utils/storage';
 import LoginScreen from './src/screens/LoginScreen';
 import RegistrationScreen from './src/screens/RegistrationScreen';
 import ApprovalStatusScreen from './src/screens/ApprovalStatusScreen';
+import HomeScreen from './src/screens/HomeScreen';
 import SplashScreen from './src/screens/SplashScreen';
+
+
+const BACKEND_URL = 'https://freshrun-backend.onrender.com';
 
 function App() {
   const [currentScreen, setCurrentScreen] = useState<'login' | 'register'>('login');
@@ -19,40 +23,81 @@ function App() {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check login state on start
+  /**
+   * On app start: load stored credentials and re-check approval status from server
+   * This ensures that if they were approved while the app was closed, they see home.
+   */
   useEffect(() => {
-    const checkLogin = () => {
+    const initApp = async () => {
+      console.log('[App] Initializing session...');
       try {
         const token = storage.getString('userToken');
         const data = storage.getObject<any>('userData');
-        if (token) {
+
+        if (token && data) {
+          console.log('[App] Found valid cached session. Logging in immediately...');
+          
+          // 1. Log in immediately with cached data so the user isn't stuck on login screen
           setUserToken(token);
           setUserData(data);
+
+          // 2. Background check for fresh data/approval status
+          try {
+            console.log('[App] Refreshing user data in background...');
+            const response = await fetch(`${BACKEND_URL}/user/profile`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            
+            if (response.ok) {
+              const result = await response.json();
+              if (result.success && result.user) {
+                const freshUser = { ...data, ...result.user };
+                storage.setItem('userData', freshUser);
+                setUserData(freshUser);
+                console.log('[App] Background refresh complete. Status:', result.user.approvalStatus);
+              }
+            } else if (response.status === 401 || response.status === 403) {
+              console.log('[App] Session expired on server. Logging out.');
+              handleLogout();
+            }
+          } catch (fetchErr) {
+            console.log('[App] Background refresh failed (likely offline). Keeping cached session.');
+          }
+        } else {
+          console.log('[App] No cached session found.');
         }
       } catch (e) {
-        console.error('Failed to load login state', e);
+        console.error('[App] Critical failure during init:', e);
       } finally {
         setLoading(false);
       }
     };
 
-    checkLogin();
+    initApp();
   }, []);
 
+
   const handleLoginSuccess = (token: string, user: any) => {
-    // If the partner is pending approval, show the popup and the status screen
     if (user.role === 'delivery' && user.approvalStatus === 'pending') {
       Alert.alert(
-        'Approval Pending',
-        'Your application is currently being reviewed by our team. Please wait for approval.',
+        '⏳ Approval Pending',
+        'Your application is currently being reviewed. You\'ll be notified as soon as you\'re approved!',
         [{ text: 'OK' }]
       );
     }
-    
     setUserToken(token);
     setUserData(user);
     storage.setItem('userToken', token);
     storage.setItem('userData', user);
+  };
+
+  const handleApproved = () => {
+    console.log('[App] Partner approved! Updating state to show home screen.');
+    // Update the stored user data to approved so next launch also goes directly to home
+    const existing = storage.getObject<any>('userData') || {};
+    const updatedUser = { ...existing, approvalStatus: 'approved' };
+    storage.setItem('userData', updatedUser);
+    setUserData(updatedUser);
   };
 
   const handleLogout = () => {
@@ -67,42 +112,37 @@ function App() {
     return <SplashScreen />;
   }
 
-  // Determine what to show if logged in
   const renderLoggedInContent = () => {
-    if (userData?.role === 'delivery' && (userData?.approvalStatus === 'pending' || userData?.approvalStatus === 'rejected')) {
+    const isPending = userData?.role === 'delivery' &&
+      (userData?.approvalStatus === 'pending' || userData?.approvalStatus === 'rejected');
+
+    if (isPending) {
       return (
-        <ApprovalStatusScreen 
-          status={userData.approvalStatus} 
-          onLogout={handleLogout} 
+        <ApprovalStatusScreen
+          status={userData.approvalStatus}
+          onApproved={handleApproved}
+          onLogout={handleLogout}
         />
       );
     }
 
     return (
-      <View style={styles.homeContainer}>
-        <Text style={styles.welcomeText}>FreshRun Delivery</Text>
-        <Text style={styles.infoText}>Partner Name: {userData?.fullName}</Text>
-        <Text style={styles.infoText}>Phone: {userData?.phone}</Text>
-        <Text style={styles.infoText}>Status: {userData?.approvalStatus}</Text>
-        
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </View>
+      <HomeScreen userData={userData} onLogout={handleLogout} />
     );
+
   };
 
   return (
     <SafeAreaView style={styles.container}>
       {!userToken ? (
         currentScreen === 'login' ? (
-          <LoginScreen 
-            onLoginSuccess={handleLoginSuccess} 
-            role="delivery" 
+          <LoginScreen
+            onLoginSuccess={handleLoginSuccess}
+            role="delivery"
             onNavigateToRegister={() => setCurrentScreen('register')}
           />
         ) : (
-          <RegistrationScreen 
+          <RegistrationScreen
             onBack={() => setCurrentScreen('login')}
             onRegisterSuccess={handleLoginSuccess}
           />
@@ -128,25 +168,26 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 12,
     color: '#333',
+    textAlign: 'center',
   },
   infoText: {
     fontSize: 16,
     color: '#666',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   logoutButton: {
     marginTop: 40,
     backgroundColor: '#FF3B30',
     padding: 15,
-    borderRadius: 8,
-    width: '100%',
+    borderRadius: 12,
+    width: '80%',
     alignItems: 'center',
   },
   logoutText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });

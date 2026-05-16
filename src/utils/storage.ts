@@ -10,13 +10,18 @@ export const storage = {
   /**
    * Store a string, object or number
    */
-  setItem: (key: string, value: string | number | boolean | object) => {
+  setItem: (key: string, value: string | number | boolean | object | null | undefined) => {
+    if (value === null || value === undefined) {
+      storageInstance.delete(key);
+      return;
+    }
     if (typeof value === 'object') {
       storageInstance.set(key, JSON.stringify(value));
     } else {
       storageInstance.set(key, value);
     }
   },
+
 
   /**
    * Retrieve a string

@@ -10,6 +10,7 @@ import {
   Platform,
   SafeAreaView,
   Image,
+  StatusBar,
 } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import axios from 'axios';
@@ -17,8 +18,8 @@ import { storage } from '../utils/storage';
 import { PageTitle, PageSubtitle } from '../components/Typography';
 import { PrimaryButton } from '../components/Button';
 import { Fonts } from '../theme/typography';
+import { Colors } from '../theme/colors';
 
-// Replace with your actual backend URL
 const BACKEND_URL = "https://freshrun-backend.onrender.com";
 const OTP_REQUEST_TIMEOUT_MS = 30000;
 const BACKEND_REQUEST_TIMEOUT_MS = 15000;
@@ -35,7 +36,6 @@ const withTimeout = async <T,>(
   message: string,
 ): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
   try {
     return await Promise.race([
       promise,
@@ -44,47 +44,26 @@ const withTimeout = async <T,>(
       }),
     ]);
   } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
+    if (timeoutId) clearTimeout(timeoutId);
   }
 };
 
 const getAuthErrorMessage = (error: any, fallbackMessage: string) => {
   const errorCode = error?.code;
-  const errorMessage = error?.message;
-
-  if (errorCode === 'auth/invalid-phone-number') {
-    return 'Please enter a valid phone number.';
-  }
-
-  if (errorCode === 'auth/too-many-requests') {
-    return 'Too many OTP attempts. Please wait a bit and try again.';
-  }
-
-  if (errorCode === 'auth/network-request-failed') {
-    return 'Network error while contacting Firebase. Please check your internet and try again.';
-  }
-
-  if (errorCode === 'auth/invalid-verification-code') {
-    return 'The OTP you entered is invalid. Please try again.';
-  }
-
-  if (errorCode === 'auth/code-expired') {
-    return 'This OTP has expired. Please request a new one.';
-  }
-
-  return errorMessage || fallbackMessage;
+  if (errorCode === 'auth/invalid-phone-number') return 'Please enter a valid phone number.';
+  if (errorCode === 'auth/too-many-requests') return 'Too many OTP attempts. Please wait a bit and try again.';
+  if (errorCode === 'auth/network-request-failed') return 'Network error while contacting Firebase. Please check your internet and try again.';
+  if (errorCode === 'auth/invalid-verification-code') return 'The OTP you entered is invalid. Please try again.';
+  if (errorCode === 'auth/code-expired') return 'This OTP has expired. Please request a new one.';
+  return error?.message || fallbackMessage;
 };
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavigateToRegister }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [code, setCode] = useState('');
-  const [confirm, setConfirm] =
-    useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
+  const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // STEP 1: Send OTP
   const signInWithPhoneNumber = async () => {
     try {
       const sanitizedPhone = phoneNumber.replace(/\D/g, '');
@@ -92,81 +71,51 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
         Alert.alert('Error', 'Please enter a valid 10-digit phone number');
         return;
       }
-
       const formattedNumber = `+91${sanitizedPhone}`;
-      console.log('Attempting to send OTP to:', formattedNumber);
-      
       setLoading(true);
       const confirmation = await withTimeout(
         auth().signInWithPhoneNumber(formattedNumber),
         OTP_REQUEST_TIMEOUT_MS,
         'OTP request timed out. Please try again.',
       );
-      
-      console.log('OTP Sent successfully to:', formattedNumber);
       setConfirm(confirmation);
     } catch (error: any) {
-      console.error('Send OTP Error details:', error);
       Alert.alert('Login Failed', getAuthErrorMessage(error, 'Could not send OTP'));
     } finally {
       setLoading(false);
     }
   };
 
-  // STEP 2: Verify OTP and Call Backend
   const confirmCode = async () => {
     if (!code || code.length < 6) {
       Alert.alert('Error', 'Please enter a 6-digit code');
       return;
     }
-
     setLoading(true);
     try {
-      if (!confirm) {
-        console.error('Confirm object is null');
-        return;
-      }
-      
-      console.log('Verifying code:', code);
-      // Verify OTP with Firebase
+      if (!confirm) return;
       const credential = await confirm.confirm(code);
-      
       if (credential?.user) {
-        // Get ID Token
         const idToken = await withTimeout(
           credential.user.getIdToken(),
           BACKEND_REQUEST_TIMEOUT_MS,
           'Timed out while fetching the Firebase token. Please try again.',
         );
-        console.log('Firebase verified. Exchanging for JWT...');
-
-        // Call Backend
         const response = await axios.post(
           `${BACKEND_URL}/auth/login`,
-          {
-            idToken,
-            role,
-          },
-          {
-            timeout: BACKEND_REQUEST_TIMEOUT_MS,
-          },
+          { idToken, role },
+          { timeout: BACKEND_REQUEST_TIMEOUT_MS }
         );
-
         if (response.data.success) {
           const { token, user } = response.data;
-          console.log('Backend login success');
-          
-          // Store JWT
           storage.setItem('userToken', token);
           storage.setItem('userData', user);
-          
           onLoginSuccess(token, user);
         } else {
           throw new Error(response.data.error || 'Backend authentication failed');
         }
       }
     } catch (error: any) {
-      console.error('Verification Error details:', error);
       const message = axios.isAxiosError(error)
         ? error.response?.data?.error || error.message || 'Backend authentication failed'
         : getAuthErrorMessage(error, 'Invalid OTP');
@@ -178,6 +127,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
         style={styles.container}
@@ -204,7 +154,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
                       onChangeText={setPhoneNumber}
                       keyboardType="phone-pad"
                       maxLength={10}
-                      placeholderTextColor="#999"
+                      placeholderTextColor={Colors.textLight}
                     />
                   </View>
                 </View>
@@ -218,12 +168,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
                       onChangeText={setCode}
                       keyboardType="number-pad"
                       maxLength={6}
-                      placeholderTextColor="#999"
-                      secureTextEntry={false}
+                      placeholderTextColor={Colors.textLight}
                     />
                   </View>
-                  <TouchableOpacity style={styles.forgotPassword} onPress={() => setConfirm(null)}>
-                    <Text style={styles.forgotPasswordText}>Change Phone Number?</Text>
+                  <TouchableOpacity style={styles.resendBtn} onPress={() => setConfirm(null)}>
+                    <Text style={styles.resendText}>Change Phone Number?</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -244,11 +193,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
             />
           </View>
 
-
           <View style={styles.footer}>
             <Text style={styles.footerText}>New to FreshRun? </Text>
             <TouchableOpacity onPress={onNavigateToRegister}>
-              <Text style={styles.linkText}>Register as Partner</Text>
+              <Text style={styles.linkText}>Become a Partner</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -260,7 +208,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.white,
   },
   container: {
     flex: 1,
@@ -287,11 +235,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 12,
+    borderColor: Colors.border,
+    borderRadius: 15,
     paddingHorizontal: 15,
     height: 60,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.white,
   },
   countryPicker: {
     flexDirection: 'row',
@@ -304,23 +252,23 @@ const styles = StyleSheet.create({
   },
   countryCode: {
     fontSize: 16,
-    fontFamily: Fonts.regular,
-    color: '#000',
+    fontFamily: Fonts.medium,
+    color: Colors.text,
   },
   textInput: {
     flex: 1,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: '#000',
+    color: Colors.text,
   },
-  forgotPassword: {
+  resendBtn: {
     alignItems: 'flex-end',
     marginTop: 10,
   },
-  forgotPasswordText: {
+  resendText: {
     fontSize: 14,
     fontFamily: Fonts.medium,
-    color: '#666',
+    color: Colors.textSecondary,
   },
   footer: {
     flexDirection: 'row',
@@ -330,12 +278,12 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 14,
     fontFamily: Fonts.regular,
-    color: '#000',
+    color: Colors.textSecondary,
   },
   linkText: {
     fontSize: 14,
     fontFamily: Fonts.bold,
-    color: '#60c547',
+    color: Colors.primary,
     textDecorationLine: 'underline',
   },
   imageContainer: {
@@ -349,6 +297,5 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 });
-
 
 export default LoginScreen;

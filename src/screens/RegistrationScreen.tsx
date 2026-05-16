@@ -12,13 +12,16 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
+import { Camera, ChevronLeft, Trash2 } from 'lucide-react-native';
 import axios from 'axios';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { storage } from '../utils/storage';
 import { PageTitle, PageSubtitle } from '../components/Typography';
 import { PrimaryButton } from '../components/Button';
 import { Fonts } from '../theme/typography';
+import { Colors } from '../theme/colors';
 
 const BACKEND_URL = "https://freshrun-backend.onrender.com";
 const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dubgo0vue/image/upload";
@@ -43,7 +46,6 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       mediaType: 'photo',
       quality: 0.7,
     });
-
     if (result.assets && result.assets[0].uri) {
       uploadToCloudinary(result.assets[0]);
     }
@@ -55,15 +57,13 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       const data = new FormData();
       data.append('file', {
         uri: asset.uri,
-        type: asset.type,
+        type: asset.type || 'image/jpeg',
         name: asset.fileName || 'upload.jpg',
       } as any);
       data.append('upload_preset', UPLOAD_PRESET);
 
       const response = await axios.post(CLOUDINARY_URL, data, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       if (response.data.secure_url) {
@@ -71,7 +71,6 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
         Alert.alert('Success', 'Aadhar Card uploaded successfully!');
       }
     } catch (error: any) {
-      console.error('Cloudinary Upload Error:', error);
       Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
     } finally {
       setUploading(false);
@@ -83,28 +82,28 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       Alert.alert('Error', 'Please fill in all fields and upload your Aadhar Card');
       return;
     }
-
     if (phoneNumber.length < 10) {
       Alert.alert('Error', 'Please enter a valid phone number');
       return;
     }
-
     if (aadharNumber.length < 12) {
       Alert.alert('Error', 'Aadhar Number must be 12 digits');
       return;
     }
 
+    const formattedPhone = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
+    const payload = {
+      fullName,
+      email,
+      phone: formattedPhone,
+      role: 'delivery',
+      aadharNumber,
+      aadharImage,
+    };
+
     setLoading(true);
     try {
-      const response = await axios.post(`${BACKEND_URL}/auth/register`, {
-        fullName,
-        email,
-        phone: phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`,
-        role: 'delivery',
-        aadharNumber,
-        aadharImage,
-      });
-
+      const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
       if (response.data.success) {
         const { token, user } = response.data;
         storage.setItem('userToken', token);
@@ -114,7 +113,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
         throw new Error(response.data.error || 'Registration failed');
       }
     } catch (error: any) {
-      const message = error.response?.data?.error || error.message || 'Registration failed';
+      const message = error?.response?.data?.error || error.message || 'Registration failed';
       Alert.alert('Registration Failed', message);
     } finally {
       setLoading(false);
@@ -123,13 +122,15 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
         style={styles.container}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
-            <Text style={styles.backText}>← Back to Login</Text>
+            <ChevronLeft size={24} color={Colors.primary} strokeWidth={2.5} />
+            <Text style={styles.backText}>Back to Login</Text>
           </TouchableOpacity>
 
           <View style={styles.header}>
@@ -145,7 +146,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
                 placeholder="Enter your full name"
                 value={fullName}
                 onChangeText={setFullName}
-                placeholderTextColor="#999"
+                placeholderTextColor={Colors.textLight}
               />
             </View>
 
@@ -158,7 +159,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
                 onChangeText={setEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                placeholderTextColor="#999"
+                placeholderTextColor={Colors.textLight}
               />
             </View>
 
@@ -173,7 +174,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
                   onChangeText={setPhoneNumber}
                   keyboardType="phone-pad"
                   maxLength={10}
-                  placeholderTextColor="#999"
+                  placeholderTextColor={Colors.textLight}
                 />
               </View>
             </View>
@@ -187,7 +188,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
                 onChangeText={setAadharNumber}
                 keyboardType="number-pad"
                 maxLength={12}
-                placeholderTextColor="#999"
+                placeholderTextColor={Colors.textLight}
               />
             </View>
 
@@ -200,6 +201,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
                     style={styles.removeImageBtn}
                     onPress={() => setAadharImage(null)}
                   >
+                    <Trash2 size={16} color="#fff" />
                     <Text style={styles.removeImageText}>Remove</Text>
                   </TouchableOpacity>
                 </View>
@@ -210,10 +212,10 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
                   disabled={uploading}
                 >
                   {uploading ? (
-                    <ActivityIndicator color="#60c547" />
+                    <ActivityIndicator color={Colors.primary} />
                   ) : (
                     <>
-                      <Text style={styles.uploadIcon}>📷</Text>
+                      <Camera size={28} color={Colors.textLight} style={{ marginBottom: 8 }} />
                       <Text style={styles.uploadText}>Upload Aadhar Image</Text>
                     </>
                   )}
@@ -243,7 +245,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.white,
   },
   container: {
     flex: 1,
@@ -254,12 +256,16 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 20,
+    marginLeft: -5,
   },
   backText: {
     fontSize: 16,
     fontFamily: Fonts.medium,
-    color: '#60c547',
+    color: Colors.primary,
+    marginLeft: 4,
   },
   header: {
     marginBottom: 30,
@@ -273,70 +279,68 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontFamily: Fonts.semiBold,
-    color: '#333',
+    color: Colors.text,
     marginBottom: 8,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 12,
+    borderColor: Colors.border,
+    borderRadius: 15,
     paddingHorizontal: 15,
     height: 56,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: '#000',
-    backgroundColor: '#fff',
+    color: Colors.text,
+    backgroundColor: Colors.white,
   },
   phoneInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E5E5',
-    borderRadius: 12,
+    borderColor: Colors.border,
+    borderRadius: 15,
     paddingHorizontal: 15,
     height: 56,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.white,
   },
   countryCode: {
     fontSize: 16,
     fontFamily: Fonts.medium,
-    color: '#000',
+    color: Colors.text,
     marginRight: 10,
     borderRightWidth: 1,
-    borderRightColor: '#E5E5E5',
+    borderRightColor: Colors.border,
     paddingRight: 10,
   },
   phoneInput: {
     flex: 1,
     fontSize: 16,
     fontFamily: Fonts.regular,
-    color: '#000',
+    color: Colors.text,
   },
   uploadButton: {
     height: 120,
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: '#E5E5E5',
-    borderRadius: 12,
+    borderColor: Colors.border,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FAFAFA',
-  },
-  uploadIcon: {
-    fontSize: 24,
-    marginBottom: 8,
+    backgroundColor: Colors.background,
   },
   uploadText: {
     fontSize: 14,
     fontFamily: Fonts.medium,
-    color: '#999',
+    color: Colors.textLight,
   },
   imagePreviewContainer: {
     width: '100%',
     height: 200,
-    borderRadius: 12,
+    borderRadius: 15,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   imagePreview: {
     width: '100%',
@@ -347,15 +351,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 10,
     right: 10,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   removeImageText: {
     color: '#fff',
     fontSize: 12,
     fontFamily: Fonts.medium,
+    marginLeft: 6,
   },
   footer: {
     marginTop: 20,
@@ -366,12 +373,12 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 12,
     fontFamily: Fonts.regular,
-    color: '#999',
+    color: Colors.textLight,
   },
   linkText: {
     fontSize: 12,
     fontFamily: Fonts.bold,
-    color: '#60c547',
+    color: Colors.primary,
     textDecorationLine: 'underline',
   },
 });
