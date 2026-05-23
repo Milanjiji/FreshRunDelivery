@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -36,7 +36,7 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: ini
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const checkApprovalStatus = async () => {
+  const checkApprovalStatus = useCallback(async () => {
     const token = storage.getString('userToken');
     if (!token) return;
 
@@ -67,11 +67,11 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: ini
         }
       }
     } catch (err) {
-      console.log('[ApprovalPoll] Network error, will retry');
+      console.log('[ApprovalPoll] Network error, will retry:', err);
     } finally {
       setIsChecking(false);
     }
-  };
+  }, [currentStatus, onApproved]);
 
   useEffect(() => {
     checkApprovalStatus();
@@ -79,7 +79,7 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: ini
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [checkApprovalStatus]);
 
   const stages = [
     {

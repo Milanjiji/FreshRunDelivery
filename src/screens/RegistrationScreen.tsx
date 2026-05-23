@@ -71,6 +71,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
         Alert.alert('Success', 'Aadhar Card uploaded successfully!');
       }
     } catch (error: any) {
+      console.error('[CloudinaryUpload] error:', error);
       Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
     } finally {
       setUploading(false);

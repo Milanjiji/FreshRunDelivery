@@ -2,9 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   StyleSheet,
-  Text,
-  View,
-  TouchableOpacity,
   Alert,
 } from 'react-native';
 import { storage } from './src/utils/storage';
@@ -61,7 +58,7 @@ function App() {
               handleLogout();
             }
           } catch (fetchErr) {
-            console.log('[App] Background refresh failed (likely offline). Keeping cached session.');
+            console.log('[App] Background refresh failed (likely offline). Keeping cached session.', fetchErr);
           }
         } else {
           console.log('[App] No cached session found.');
@@ -127,7 +124,7 @@ function App() {
     }
 
     return (
-      <HomeScreen userData={userData} onLogout={handleLogout} />
+      <HomeScreen userData={userData} userToken={userToken} onLogout={handleLogout} />
     );
 
   };

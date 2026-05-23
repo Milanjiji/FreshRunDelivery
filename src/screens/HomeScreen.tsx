@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,15 +8,14 @@ import {
   TextInput,
   SafeAreaView,
   StatusBar,
-  Platform,
-  Image,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { 
   Bell, 
   Search, 
   Package, 
   Truck, 
-  ChevronRight, 
   User, 
   MapPin, 
   Clock,
@@ -27,98 +26,101 @@ import {
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 import ProfileScreen from './ProfileScreen';
+import DirectionsScreen from './DirectionsScreen';
 
-// ─── DUMMY DATA ─────────────────────────────────────────────────────────────
-const DUMMY_PICKUPS = [
-  {
-    id: '873264-0001',
-    location: 'FreshRun Warehouse (SS4638)',
-    address: '14, Industrial Estate, Kozhikode',
-    boxes: 38,
-    weight: '95kgs',
-    time: '10:30 AM',
-    status: 'pending',
-  },
-  {
-    id: '873264-0002',
-    location: 'Green Farms Hub (MK2201)',
-    address: '7, Market Road, Calicut',
-    boxes: 12,
-    weight: '34kgs',
-    time: '11:15 AM',
-    status: 'pending',
-  },
-  {
-    id: '873264-0003',
-    location: 'Coastal Suppliers (CB9910)',
-    address: '23, Beach Road, Beypore',
-    boxes: 5,
-    weight: '18kgs',
-    time: '1:00 PM',
-    status: 'pending',
-  },
-];
-
-const DUMMY_DELIVERIES = [
-  {
-    id: 'DEL-4421',
-    customer: 'Rahul Menon',
-    address: '42/B, Mavoor Road, Kozhikode - 673004',
-    boxes: 2,
-    weight: '6kgs',
-    time: '12:00 PM',
-    status: 'pending',
-  },
-  {
-    id: 'DEL-4422',
-    customer: 'Priya Nair',
-    address: '8, Westhill Bypass, Kozhikode - 673005',
-    boxes: 1,
-    weight: '3kgs',
-    time: '2:30 PM',
-    status: 'pending',
-  },
-  {
-    id: 'DEL-4423',
-    customer: 'Arjun Dev',
-    address: '101, Medical College Road, Kozhikode',
-    boxes: 4,
-    weight: '12kgs',
-    time: '4:00 PM',
-    status: 'pending',
-  },
-  {
-    id: 'DEL-4424',
-    customer: 'Sneha Krishnan',
-    address: '55, Palayam, Kozhikode - 673001',
-    boxes: 1,
-    weight: '2kgs',
-    time: '5:15 PM',
-    status: 'pending',
-  },
-  {
-    id: 'DEL-4425',
-    customer: 'Anil Kumar',
-    address: '30, Nadakkavu, Kozhikode',
-    boxes: 3,
-    weight: '9kgs',
-    time: '6:00 PM',
-    status: 'pending',
-  },
-];
+const BACKEND_URL = 'https://freshrun-backend.onrender.com';
 
 interface HomeScreenProps {
   userData: any;
+  userToken: string | null;
   onLogout: () => void;
 }
 
 type TabType = 'pickups' | 'deliveries';
 
 // ─── COMPONENT ──────────────────────────────────────────────────────────────
-const HomeScreen: React.FC<HomeScreenProps> = ({ userData, onLogout }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }) => {
   const [activeTab, setActiveTab] = useState<TabType>('pickups');
   const [searchText, setSearchText] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+
+  // Dynamic state loaded from the backend APIs
+  const [pickups, setPickups] = useState<any[]>([]);
+  const [deliveries, setDeliveries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedOrderForDirections, setSelectedOrderForDirections] = useState<any | null>(null);
+
+  // Fetch Available Pickups (where delivery_boy_opted = false and is_completed = false)
+  const fetchPickups = useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/orders/available`, {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        setPickups(result.orders || []);
+      } else {
+        console.warn('[HomeScreen] Failed to fetch available pickups:', result.error);
+      }
+    } catch (error) {
+      console.error('[HomeScreen] fetchPickups error:', error);
+    }
+  }, [userToken]);
+
+  // Fetch Partner Deliveries (assigned to current partner, is_completed = false)
+  const fetchDeliveries = useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/orders/partner`, {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        setDeliveries(result.orders || []);
+      } else {
+        console.warn('[HomeScreen] Failed to fetch partner deliveries:', result.error);
+      }
+    } catch (error) {
+      console.error('[HomeScreen] fetchDeliveries error:', error);
+    }
+  }, [userToken]);
+
+  // Refresh mechanism
+  const fetchBoth = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchPickups(), fetchDeliveries()]);
+    } catch (error) {
+      console.error('[HomeScreen] Refresh error:', error);
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
+    }
+  }, [fetchPickups, fetchDeliveries]);
+
+  // Trigger load on mount or token change
+  useEffect(() => {
+    if (userToken) {
+      setLoading(true);
+      fetchBoth();
+    }
+  }, [userToken, fetchBoth]);
+
+  // If Directions screen is overlayed
+  if (selectedOrderForDirections) {
+    return (
+      <DirectionsScreen
+        order={selectedOrderForDirections}
+        userToken={userToken}
+        onBack={() => setSelectedOrderForDirections(null)}
+        onRefresh={fetchBoth}
+      />
+    );
+  }
 
   if (showProfile) {
     return (
@@ -131,21 +133,31 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, onLogout }) => {
   }
 
   const partnerName = userData?.fullName || userData?.full_name || 'Partner';
-  const firstName = partnerName.split(' ')[0];
 
-  const filteredPickups = DUMMY_PICKUPS.filter(
+  const filteredPickups = pickups.filter(
     p =>
       searchText === '' ||
-      p.id.toLowerCase().includes(searchText.toLowerCase()) ||
-      p.location.toLowerCase().includes(searchText.toLowerCase()),
+      (p.id && p.id.toLowerCase().includes(searchText.toLowerCase())) ||
+      (p.store_name && p.store_name.toLowerCase().includes(searchText.toLowerCase())) ||
+      (p.store_address && p.store_address.toLowerCase().includes(searchText.toLowerCase())),
   );
 
-  const filteredDeliveries = DUMMY_DELIVERIES.filter(
+  const filteredDeliveries = deliveries.filter(
     d =>
       searchText === '' ||
-      d.id.toLowerCase().includes(searchText.toLowerCase()) ||
-      d.customer.toLowerCase().includes(searchText.toLowerCase()),
+      (d.id && d.id.toLowerCase().includes(searchText.toLowerCase())) ||
+      (d.user_name && d.user_name.toLowerCase().includes(searchText.toLowerCase())) ||
+      (d.delivery_address?.line1 && d.delivery_address.line1.toLowerCase().includes(searchText.toLowerCase())),
   );
+
+  if (loading && !refreshing) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -179,6 +191,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, onLogout }) => {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={fetchBoth} colors={[Colors.primary]} />
+        }
       >
         {/* ── SEARCH BAR ────────────────────────────────────── */}
         <View style={styles.searchSection}>
@@ -205,7 +220,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, onLogout }) => {
               <Truck size={22} color="#fff" strokeWidth={2.5} />
             </View>
             <Text style={styles.cubicLabelLight}>Today</Text>
-            <Text style={styles.cubicValueLight}>{DUMMY_DELIVERIES.length}</Text>
+            <Text style={styles.cubicValueLight}>{deliveries.length}</Text>
             <Text style={styles.cubicStatusLight}>Orders Active</Text>
           </TouchableOpacity>
 
@@ -254,68 +269,80 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, onLogout }) => {
             {activeTab === 'pickups' ? 'Upcoming Pickups' : 'Recent Deliveries'}
           </Text>
           
-          {(activeTab === 'pickups' ? filteredPickups : filteredDeliveries).map((item: any) => (
-            <TouchableOpacity 
-              key={item.id} 
-              style={styles.taskCard}
-              activeOpacity={0.9}
-            >
-              <View style={styles.taskCardHeader}>
-                <View style={styles.idGroup}>
-                  <View style={styles.iconCircle}>
-                    {activeTab === 'pickups' ? (
-                      <Package size={16} color={Colors.primary} />
-                    ) : (
-                      <Truck size={16} color={Colors.primary} />
-                    )}
+          {(activeTab === 'pickups' ? filteredPickups : filteredDeliveries).map((item: any) => {
+            const shortId = item.id ? item.id.split('-')[0].toUpperCase() : 'N/A';
+            const orderTime = item.created_at
+              ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : 'N/A';
+            const boxesCount = item.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1;
+            const weightVal = (boxesCount * 0.8).toFixed(1) + 'kg';
+
+            return (
+              <TouchableOpacity 
+                key={item.id} 
+                style={styles.taskCard}
+                activeOpacity={0.9}
+                onPress={() => setSelectedOrderForDirections(item)}
+              >
+                <View style={styles.taskCardHeader}>
+                  <View style={styles.idGroup}>
+                    <View style={styles.iconCircle}>
+                      {activeTab === 'pickups' ? (
+                        <Package size={16} color={Colors.primary} />
+                      ) : (
+                        <Truck size={16} color={Colors.primary} />
+                      )}
+                    </View>
+                    <Text style={styles.idText}>#{shortId}</Text>
                   </View>
-                  <Text style={styles.idText}>{item.id}</Text>
-                </View>
-                <View style={styles.timeGroup}>
-                  <Clock size={12} color={Colors.textSecondary} style={{ marginRight: 4 }} />
-                  <Text style={styles.timeText}>{item.time}</Text>
-                </View>
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.taskBody}>
-                <View style={styles.locationInfo}>
-                  <Text style={styles.label}>
-                    {activeTab === 'pickups' ? 'Pickup Location' : 'Customer Name'}
-                  </Text>
-                  <Text style={styles.value} numberOfLines={1}>
-                    {activeTab === 'pickups' ? item.location : item.customer}
-                  </Text>
-                  <View style={styles.addressRow}>
-                    <MapPin size={12} color={Colors.textLight} style={{ marginRight: 4, marginTop: 2 }} />
-                    <Text style={styles.addressText} numberOfLines={2}>{item.address}</Text>
+                  <View style={styles.timeGroup}>
+                    <Clock size={12} color={Colors.textSecondary} style={{ marginRight: 4 }} />
+                    <Text style={styles.timeText}>{orderTime}</Text>
                   </View>
                 </View>
 
-                <View style={styles.metaInfo}>
-                  <View style={styles.metaItem}>
-                    <Text style={styles.metaLabel}>Boxes</Text>
-                    <Text style={styles.metaValue}>{item.boxes}</Text>
+                <View style={styles.divider} />
+
+                <View style={styles.taskBody}>
+                  <View style={styles.locationInfo}>
+                    <Text style={styles.label}>
+                      {activeTab === 'pickups' ? 'Pickup Location' : 'Customer Name'}
+                    </Text>
+                    <Text style={styles.value} numberOfLines={1}>
+                      {activeTab === 'pickups' ? (item.store_name || 'FreshRun Store') : (item.user_name || 'Customer')}
+                    </Text>
+                    <View style={styles.addressRow}>
+                      <MapPin size={12} color={Colors.textLight} style={{ marginRight: 4, marginTop: 2 }} />
+                      <Text style={styles.addressText} numberOfLines={2}>
+                        {activeTab === 'pickups' ? (item.store_address || 'Store Address') : (item.delivery_address?.line1 || 'Customer Address')}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.metaItem}>
-                    <Text style={styles.metaLabel}>Wt</Text>
-                    <Text style={styles.metaValue}>{item.weight}</Text>
+
+                  <View style={styles.metaInfo}>
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaLabel}>Boxes</Text>
+                      <Text style={styles.metaValue}>{boxesCount}</Text>
+                    </View>
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaLabel}>Wt</Text>
+                      <Text style={styles.metaValue}>{weightVal}</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
 
-              <View style={styles.actionRow}>
-                <TouchableOpacity style={styles.secondaryBtn}>
-                  <Text style={styles.secondaryBtnText}>Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.primaryBtn}>
-                  <MapIcon size={16} color="#fff" style={{ marginRight: 6 }} />
-                  <Text style={styles.primaryBtnText}>Get Directions</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => setSelectedOrderForDirections(item)}>
+                    <Text style={styles.secondaryBtnText}>Details</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.primaryBtn} onPress={() => setSelectedOrderForDirections(item)}>
+                    <MapIcon size={16} color="#fff" style={{ marginRight: 6 }} />
+                    <Text style={styles.primaryBtnText}>Get Directions</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
 
           {(activeTab === 'pickups' ? filteredPickups : filteredDeliveries).length === 0 && (
             <View style={styles.emptyState}>
