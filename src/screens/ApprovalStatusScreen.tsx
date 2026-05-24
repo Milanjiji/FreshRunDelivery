@@ -21,7 +21,9 @@ import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 import { storage } from '../utils/storage';
 
-const BACKEND_URL = 'https://freshrun-backend.onrender.com';
+import { API_BASE_URL } from '../config/api';
+
+const BACKEND_URL = API_BASE_URL;
 const POLL_INTERVAL_MS = 10000; // 10 seconds
 
 interface ApprovalStatusScreenProps {

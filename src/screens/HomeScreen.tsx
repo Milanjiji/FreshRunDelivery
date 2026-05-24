@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,12 +23,15 @@ import {
   Map as MapIcon,
   ChevronDown
 } from 'lucide-react-native';
+import io from 'socket.io-client';
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 import ProfileScreen from './ProfileScreen';
 import DirectionsScreen from './DirectionsScreen';
 
-const BACKEND_URL = 'https://freshrun-backend.onrender.com';
+import { API_BASE_URL } from '../config/api';
+
+const BACKEND_URL = API_BASE_URL;
 
 interface HomeScreenProps {
   userData: any;
@@ -50,6 +53,41 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrderForDirections, setSelectedOrderForDirections] = useState<any | null>(null);
+
+  const socketRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (userToken) {
+      socketRef.current = io(BACKEND_URL);
+
+      socketRef.current.on('connect', () => {
+        console.log('[HomeScreen] Socket connected');
+        socketRef.current.emit('join_room', 'delivery_partners');
+        
+        // Join rooms for all active deliveries
+        deliveries.forEach(order => {
+           socketRef.current.emit('join_room', `order_${order.id}`);
+        });
+      });
+
+      socketRef.current.on('new_available_order', (newOrder: any) => {
+        console.log('[HomeScreen] New available order:', newOrder.id);
+        setPickups(prev => [newOrder, ...prev]);
+      });
+
+      socketRef.current.on('order_status_changed', (updatedOrder: any) => {
+        console.log('[HomeScreen] Order updated:', updatedOrder.id, updatedOrder.status);
+        // Refresh everything to ensure UI is in sync
+        fetchBoth();
+      });
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+      };
+    }
+  }, [userToken, deliveries.length, fetchBoth]);
 
   // Fetch Available Pickups (where delivery_boy_opted = false and is_completed = false)
   const fetchPickups = useCallback(async () => {

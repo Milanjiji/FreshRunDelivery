@@ -23,7 +23,9 @@ import { PrimaryButton } from '../components/Button';
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 
-const BACKEND_URL = "https://freshrun-backend.onrender.com";
+import { API_BASE_URL } from '../config/api';
+
+const BACKEND_URL = API_BASE_URL;
 const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dubgo0vue/image/upload";
 const UPLOAD_PRESET = "freshrun_preset";
 

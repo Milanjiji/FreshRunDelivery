@@ -24,7 +24,9 @@ import {
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 
-const BACKEND_URL = 'https://freshrun-backend.onrender.com';
+import { API_BASE_URL } from '../config/api';
+
+const BACKEND_URL = API_BASE_URL;
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface DirectionsScreenProps {
@@ -60,13 +62,11 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     order?.delivery_address?.latitude ||
     order?.delivery_address?.lat ||
     order?.user_lat ||
-    order?.latitude ||
     null;
   const rawUserLng =
     order?.delivery_address?.longitude ||
     order?.delivery_address?.lng ||
     order?.user_lng ||
-    order?.longitude ||
     null;
 
   const userLat = rawUserLat ? parseFloat(rawUserLat) : null;
@@ -79,13 +79,21 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     console.log('   Raw order fields:');
     console.log(`     order.user_lat         = ${order?.user_lat}`);
     console.log(`     order.user_lng         = ${order?.user_lng}`);
-    console.log(`     order.latitude         = ${order?.latitude}`);
-    console.log(`     order.longitude        = ${order?.longitude}`);
     console.log(`     delivery_address.latitude  = ${order?.delivery_address?.latitude}`);
     console.log(`     delivery_address.longitude = ${order?.delivery_address?.longitude}`);
     console.log(`     address_id             = ${order?.address_id}`);
     console.log('─────────────────────────────────────────────────────────────\n');
-  }, [storeLat, storeLng, userLat, userLng]);
+  }, [
+    order?.address_id,
+    order?.delivery_address?.latitude,
+    order?.delivery_address?.longitude,
+    order?.user_lat,
+    order?.user_lng,
+    storeLat,
+    storeLng,
+    userLat,
+    userLng,
+  ]);
 
   // Leaflet HTML Content
   const htmlContent = `
@@ -375,13 +383,6 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     order?.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1;
   const weightVal = (boxesCount * 0.8).toFixed(1) + 'kgs';
 
-  const getFloatingStatusDisplay = () => {
-    if (localCompleted || localStatus === 'delivered') return 'Delivered';
-    if (localStatus === 'out_for_delivery') return 'Dispatched';
-    if (order?.is_packed || localStatus === 'packed') return 'Packed';
-    return 'Confirmed';
-  };
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
@@ -625,11 +626,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     marginTop: -28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 10,
   },
   detailsContent: {
     padding: 20,
@@ -850,9 +846,8 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: 15,
+    paddingBottom: 20,
     backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
   },
   mainActionBtn: {
     height: 48,

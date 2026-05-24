@@ -12,7 +12,9 @@ import HomeScreen from './src/screens/HomeScreen';
 import SplashScreen from './src/screens/SplashScreen';
 
 
-const BACKEND_URL = 'https://freshrun-backend.onrender.com';
+import { API_BASE_URL } from './src/config/api';
+
+const BACKEND_URL = API_BASE_URL;
 
 function App() {
   const [currentScreen, setCurrentScreen] = useState<'login' | 'register'>('login');

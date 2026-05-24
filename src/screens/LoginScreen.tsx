@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   Image,
   StatusBar,
+  ScrollView,
 } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import axios from 'axios';
@@ -20,7 +21,9 @@ import { PrimaryButton } from '../components/Button';
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 
-const BACKEND_URL = "https://freshrun-backend.onrender.com";
+import { API_BASE_URL } from '../config/api';
+
+const BACKEND_URL = API_BASE_URL;
 const OTP_REQUEST_TIMEOUT_MS = 30000;
 const BACKEND_REQUEST_TIMEOUT_MS = 15000;
 
@@ -132,7 +135,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
         style={styles.container}
       >
-        <View style={styles.content}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.topContainer}>
             <View style={styles.header}>
               <PageTitle>Welcome Back!</PageTitle>
@@ -199,7 +206,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
               <Text style={styles.linkText}>Become a Partner</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -213,14 +220,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 25,
     paddingTop: 60,
     paddingBottom: 40,
   },
   topContainer: {
-    flex: 1,
+    marginBottom: 20,
   },
   header: {
     marginBottom: 40,
@@ -287,10 +294,10 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   imageContainer: {
-    flex: 1,
+    height: 250,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 10,
+    marginVertical: 20,
   },
   loginImage: {
     width: '100%',
