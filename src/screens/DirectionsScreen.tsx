@@ -44,6 +44,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 }) => {
   const webViewRef = useRef<WebView>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [resolvedOrder, setResolvedOrder] = useState<any>(order);
 
   // Maintain local states to update UI dynamically without closing the screen
   const [localStatus, setLocalStatus] = useState<string>(order?.status || 'pending');
@@ -52,21 +53,51 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     order?.is_given_to_delivery_boy || false
   );
   const [localCompleted, setLocalCompleted] = useState<boolean>(order?.is_completed || false);
+  const orderData = resolvedOrder || order;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchOrderDetails = async () => {
+      if (!order?.id || !userToken) return;
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/orders/${order.id}`, {
+          headers: {
+            Authorization: `Bearer ${userToken}`,
+          },
+        });
+
+        const result = await response.json();
+        if (isMounted && response.ok && result.success && result.order) {
+          setResolvedOrder(result.order);
+        }
+      } catch (error) {
+        console.warn('[DirectionsScreen] Failed to refresh order details:', error);
+      }
+    };
+
+    fetchOrderDetails();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [order?.id, userToken]);
 
   // Parse Coordinates
-  const storeLat = parseFloat(order?.store_lat) || 11.2588;
-  const storeLng = parseFloat(order?.store_lng) || 75.7804;
+  const storeLat = parseFloat(orderData?.store_lat) || 11.2588;
+  const storeLng = parseFloat(orderData?.store_lng) || 75.7804;
 
   // Try every possible field name the backend might return for customer coords
   const rawUserLat =
-    order?.delivery_address?.latitude ||
-    order?.delivery_address?.lat ||
-    order?.user_lat ||
+    orderData?.delivery_address?.latitude ||
+    orderData?.delivery_address?.lat ||
+    orderData?.user_lat ||
     null;
   const rawUserLng =
-    order?.delivery_address?.longitude ||
-    order?.delivery_address?.lng ||
-    order?.user_lng ||
+    orderData?.delivery_address?.longitude ||
+    orderData?.delivery_address?.lng ||
+    orderData?.user_lng ||
     null;
 
   const userLat = rawUserLat ? parseFloat(rawUserLat) : null;
@@ -77,18 +108,18 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     console.log(`   START (Store):    ${storeLat}, ${storeLng}`);
     console.log(`   END (Customer):   ${userLat}, ${userLng}`);
     console.log('   Raw order fields:');
-    console.log(`     order.user_lat         = ${order?.user_lat}`);
-    console.log(`     order.user_lng         = ${order?.user_lng}`);
-    console.log(`     delivery_address.latitude  = ${order?.delivery_address?.latitude}`);
-    console.log(`     delivery_address.longitude = ${order?.delivery_address?.longitude}`);
-    console.log(`     address_id             = ${order?.address_id}`);
+    console.log(`     order.user_lat         = ${orderData?.user_lat}`);
+    console.log(`     order.user_lng         = ${orderData?.user_lng}`);
+    console.log(`     delivery_address.latitude  = ${orderData?.delivery_address?.latitude}`);
+    console.log(`     delivery_address.longitude = ${orderData?.delivery_address?.longitude}`);
+    console.log(`     address_id             = ${orderData?.address_id}`);
     console.log('─────────────────────────────────────────────────────────────\n');
   }, [
-    order?.address_id,
-    order?.delivery_address?.latitude,
-    order?.delivery_address?.longitude,
-    order?.user_lat,
-    order?.user_lng,
+    orderData?.address_id,
+    orderData?.delivery_address?.latitude,
+    orderData?.delivery_address?.longitude,
+    orderData?.user_lat,
+    orderData?.user_lng,
     storeLat,
     storeLng,
     userLat,
@@ -212,10 +243,10 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           const storeIcon = L.divIcon({ html: storeHtml, className: '', iconSize: [32, 32], iconAnchor: [16, 16] });
           const homeIcon = L.divIcon({ html: homeHtml, className: '', iconSize: [32, 32], iconAnchor: [16, 16] });
 
-          L.marker(storeLoc, { icon: storeIcon }).addTo(map).bindPopup('<b>Store: ${order?.store_name || 'Pickup Store'}</b>');
+          L.marker(storeLoc, { icon: storeIcon }).addTo(map).bindPopup('<b>Store: ${orderData?.store_name || 'Pickup Store'}</b>');
 
           if (userLoc) {
-            L.marker(userLoc, { icon: homeIcon }).addTo(map).bindPopup('<b>Customer: ${order?.user_name || 'Delivery address'}</b>');
+            L.marker(userLoc, { icon: homeIcon }).addTo(map).bindPopup('<b>Customer: ${orderData?.user_name || 'Delivery address'}</b>');
 
             L.polyline([storeLoc, userLoc], {
               color: '#60c547',
@@ -354,7 +385,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
   // Phone Call helper
   const handleCall = () => {
-    const phone = order?.user_phone;
+    const phone = orderData?.user_phone;
     if (phone) {
       Linking.openURL(`tel:${phone}`);
     } else {
@@ -366,7 +397,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const getStatusDisplay = () => {
     if (localCompleted || localStatus === 'delivered') return 'Order Delivered';
     if (localStatus === 'out_for_delivery') return 'Out for Delivery';
-    if (order?.is_packed || localStatus === 'packed') return 'Order Packed';
+    if (orderData?.is_packed || localStatus === 'packed') return 'Order Packed';
     return 'Order Confirmed';
   };
 
@@ -374,13 +405,13 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const getStatusDescription = () => {
     if (localCompleted || localStatus === 'delivered') return 'The order has been successfully delivered to the customer.';
     if (localStatus === 'out_for_delivery') return 'Order is out for delivery. Head to the customer address.';
-    if (order?.is_packed || localStatus === 'packed') return 'Order is packed and ready. Proceed to the store for pickup.';
+    if (orderData?.is_packed || localStatus === 'packed') return 'Order is packed and ready. Proceed to the store for pickup.';
     return 'Order confirmed by store and is currently being processed.';
   };
 
   // Dynamic box counting
   const boxesCount =
-    order?.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1;
+    orderData?.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1;
   const weightVal = (boxesCount * 0.8).toFixed(1) + 'kgs';
 
   return (
@@ -424,20 +455,20 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             <View style={[styles.stageDot, styles.stageDotActive]} />
             <Text style={styles.stageTextActive}>Confirmed</Text>
           </View>
-          <View style={[styles.stageLine, (order?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive]} />
+          <View style={[styles.stageLine, (orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive]} />
 
           {/* Stage 2: Packed */}
           <View style={styles.stageItem}>
             <View
               style={[
                 styles.stageDot,
-                (order?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) &&
+                (orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) &&
                   styles.stageDotActive,
               ]}
             />
             <Text
               style={
-                order?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted
+                orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted
                   ? styles.stageTextActive
                   : styles.stageText
               }
@@ -484,10 +515,10 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               <ShoppingBag size={20} color={Colors.primary} />
             </View>
             <View style={styles.cardDetails}>
-              <Text style={styles.cardMainText}>{order.store_name || 'FreshRun Partner Store'}</Text>
+              <Text style={styles.cardMainText}>{orderData.store_name || 'FreshRun Partner Store'}</Text>
               <View style={styles.addressRow}>
                 <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
-                <Text style={styles.cardSubText}>{order.store_address || 'Store location address line'}</Text>
+                <Text style={styles.cardSubText}>{orderData.store_address || 'Store location address line'}</Text>
               </View>
             </View>
           </View>
@@ -501,11 +532,11 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               <MapPin size={20} color={Colors.secondary} />
             </View>
             <View style={styles.cardDetails}>
-              <Text style={styles.cardMainText}>{order.user_name || 'Guest Customer'}</Text>
+              <Text style={styles.cardMainText}>{orderData.user_name || 'Guest Customer'}</Text>
               <View style={styles.addressRow}>
                 <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
                 <Text style={styles.cardSubText}>
-                  {order.delivery_address?.line1 || 'Address details not fully defined'}
+                  {orderData.delivery_address?.line1 || 'Address details not fully defined'}
                 </Text>
               </View>
             </View>
@@ -529,7 +560,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           </View>
           <View style={styles.metaBox}>
             <Text style={styles.metaLabel}>Items Type</Text>
-            <Text style={styles.metaValue}>{order.items?.length || 0} unique</Text>
+            <Text style={styles.metaValue}>{orderData.items?.length || 0} unique</Text>
           </View>
         </View>
 
@@ -537,7 +568,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Items Checklist</Text>
           <View style={styles.itemsCard}>
-            {order.items?.map((item: any, idx: number) => (
+            {orderData.items?.map((item: any, idx: number) => (
               <View key={idx} style={styles.itemRow}>
                 <View style={styles.itemQtyWrap}>
                   <Text style={styles.itemQtyText}>{item.quantity || 1}x</Text>
@@ -551,7 +582,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             <View style={styles.itemDivider} />
             <View style={styles.totalRow}>
               <Text style={styles.totalLabelText}>Bill Total</Text>
-              <Text style={styles.totalValueText}>₹{parseFloat(order.total_amount || 0).toFixed(2)}</Text>
+              <Text style={styles.totalValueText}>₹{parseFloat(orderData.total_amount || 0).toFixed(2)}</Text>
             </View>
           </View>
         </View>

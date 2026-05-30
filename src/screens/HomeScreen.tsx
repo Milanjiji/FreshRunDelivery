@@ -21,7 +21,8 @@ import {
   Clock,
   TrendingUp,
   Map as MapIcon,
-  ChevronDown
+  ChevronDown,
+  Wallet
 } from 'lucide-react-native';
 import io from 'socket.io-client';
 import { Fonts } from '../theme/typography';
@@ -54,40 +55,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrderForDirections, setSelectedOrderForDirections] = useState<any | null>(null);
 
-  const socketRef = useRef<any>(null);
+  const [userProfile, setUserProfile] = useState<any>(userData);
 
+  // Sync state if prop changes
   useEffect(() => {
-    if (userToken) {
-      socketRef.current = io(BACKEND_URL);
-
-      socketRef.current.on('connect', () => {
-        console.log('[HomeScreen] Socket connected');
-        socketRef.current.emit('join_room', 'delivery_partners');
-        
-        // Join rooms for all active deliveries
-        deliveries.forEach(order => {
-           socketRef.current.emit('join_room', `order_${order.id}`);
-        });
-      });
-
-      socketRef.current.on('new_available_order', (newOrder: any) => {
-        console.log('[HomeScreen] New available order:', newOrder.id);
-        setPickups(prev => [newOrder, ...prev]);
-      });
-
-      socketRef.current.on('order_status_changed', (updatedOrder: any) => {
-        console.log('[HomeScreen] Order updated:', updatedOrder.id, updatedOrder.status);
-        // Refresh everything to ensure UI is in sync
-        fetchBoth();
-      });
-
-      return () => {
-        if (socketRef.current) {
-          socketRef.current.disconnect();
-        }
-      };
-    }
-  }, [userToken, deliveries.length, fetchBoth]);
+    setUserProfile(userData);
+  }, [userData]);
 
   // Fetch Available Pickups (where delivery_boy_opted = false and is_completed = false)
   const fetchPickups = useCallback(async () => {
@@ -127,18 +100,35 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
     }
   }, [userToken]);
 
+  // Fetch latest user profile (for live earnings update)
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/user/profile`, {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      });
+      const result = await response.json();
+      if (response.ok && result.success) {
+        setUserProfile(result.user);
+      }
+    } catch (error) {
+      console.error('[HomeScreen] fetchUserProfile error:', error);
+    }
+  }, [userToken]);
+
   // Refresh mechanism
   const fetchBoth = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([fetchPickups(), fetchDeliveries()]);
+      await Promise.all([fetchPickups(), fetchDeliveries(), fetchUserProfile()]);
     } catch (error) {
       console.error('[HomeScreen] Refresh error:', error);
     } finally {
       setRefreshing(false);
       setLoading(false);
     }
-  }, [fetchPickups, fetchDeliveries]);
+  }, [fetchPickups, fetchDeliveries, fetchUserProfile]);
 
   // Trigger load on mount or token change
   useEffect(() => {
@@ -147,6 +137,41 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
       fetchBoth();
     }
   }, [userToken, fetchBoth]);
+
+  const socketRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (userToken) {
+      socketRef.current = io(BACKEND_URL);
+
+      socketRef.current.on('connect', () => {
+        console.log('[HomeScreen] Socket connected');
+        socketRef.current.emit('join_room', 'delivery_partners');
+        
+        // Join rooms for all active deliveries
+        deliveries.forEach(order => {
+           socketRef.current.emit('join_room', `order_${order.id}`);
+        });
+      });
+
+      socketRef.current.on('new_available_order', (newOrder: any) => {
+        console.log('[HomeScreen] New available order:', newOrder.id);
+        setPickups(prev => [newOrder, ...prev]);
+      });
+
+      socketRef.current.on('order_status_changed', (updatedOrder: any) => {
+        console.log('[HomeScreen] Order updated:', updatedOrder.id, updatedOrder.status);
+        // Refresh everything to ensure UI is in sync
+        fetchBoth();
+      });
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
+      };
+    }
+  }, [userToken, deliveries.length, fetchBoth]);
 
   // If Directions screen is overlayed
   if (selectedOrderForDirections) {
@@ -163,14 +188,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
   if (showProfile) {
     return (
       <ProfileScreen
-        userData={userData}
+        userData={userProfile}
         onBack={() => setShowProfile(false)}
         onLogout={onLogout}
       />
     );
   }
 
-  const partnerName = userData?.fullName || userData?.full_name || 'Partner';
+  const partnerName = userProfile?.fullName || userProfile?.full_name || 'Partner';
 
   const filteredPickups = pickups.filter(
     p =>
@@ -249,30 +274,35 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
 
         {/* ── CUBIC STATS GRID ──────────────────────────────── */}
         <View style={styles.statsGrid}>
-          <TouchableOpacity
-            style={[styles.cubicCard, { backgroundColor: Colors.primary }]}
-            activeOpacity={0.8}
-            onPress={() => setActiveTab('deliveries')}
-          >
+          {/* Today's Earning */}
+          <View style={[styles.cubicCard, { backgroundColor: Colors.primary }]}>
             <View style={styles.cubicIconWrapLight}>
-              <Truck size={22} color="#fff" strokeWidth={2.5} />
+              <Clock size={18} color="#fff" strokeWidth={2.5} />
             </View>
-            <Text style={styles.cubicLabelLight}>Today</Text>
-            <Text style={styles.cubicValueLight}>{deliveries.length}</Text>
-            <Text style={styles.cubicStatusLight}>Orders Active</Text>
-          </TouchableOpacity>
+            <Text style={styles.cubicLabelLight} numberOfLines={1}>Today</Text>
+            <Text style={styles.cubicValueLight} numberOfLines={1}>₹{parseFloat(userProfile?.todayEarnings || 0).toFixed(0)}</Text>
+            <Text style={styles.cubicStatusLight} numberOfLines={1}>Today's pay</Text>
+          </View>
 
-          <TouchableOpacity
-            style={styles.cubicCard}
-            activeOpacity={0.8}
-          >
+          {/* Total Earning */}
+          <View style={styles.cubicCard}>
             <View style={styles.cubicIconWrapPrimary}>
-              <TrendingUp size={22} color={Colors.primary} strokeWidth={2.5} />
+              <TrendingUp size={18} color={Colors.primary} strokeWidth={2.5} />
             </View>
-            <Text style={styles.cubicLabelDark}>Total</Text>
-            <Text style={styles.cubicValueDark}>1,248</Text>
-            <Text style={styles.cubicStatusDark}>All Time</Text>
-          </TouchableOpacity>
+            <Text style={styles.cubicLabelDark} numberOfLines={1}>Total Earning</Text>
+            <Text style={styles.cubicValueDark} numberOfLines={1}>₹{parseFloat(userProfile?.totalEarnings || 0).toFixed(0)}</Text>
+            <Text style={styles.cubicStatusDark} numberOfLines={1}>All Time</Text>
+          </View>
+
+          {/* To Withdraw */}
+          <View style={styles.cubicCard}>
+            <View style={styles.cubicIconWrapSecondary}>
+              <Wallet size={18} color={Colors.secondary} strokeWidth={2.5} />
+            </View>
+            <Text style={styles.cubicLabelDark} numberOfLines={1}>To Withdraw</Text>
+            <Text style={styles.cubicValueDark} numberOfLines={1}>₹{parseFloat(userProfile?.withdrawableEarnings || 0).toFixed(0)}</Text>
+            <Text style={styles.cubicStatusDark} numberOfLines={1}>Available</Text>
+          </View>
         </View>
 
         {/* ── TABS (Synchronized with Customer App Pill Style) ── */}
@@ -498,16 +528,15 @@ const styles = StyleSheet.create({
   // Stats Grid (Cubic Boxes)
   statsGrid: {
     flexDirection: 'row',
-    padding: 15,
+    padding: 12,
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 8,
   },
   cubicCard: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderRadius: 15,
-    padding: 16,
-    aspectRatio: 1.1,
+    borderRadius: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: Colors.border,
     justifyContent: 'center',
@@ -519,54 +548,63 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   cubicIconWrapLight: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   cubicIconWrapPrimary: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: Colors.background,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
+  },
+  cubicIconWrapSecondary: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.secondaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   cubicLabelLight: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: Fonts.medium,
     color: 'rgba(255,255,255,0.8)',
     marginBottom: 2,
   },
   cubicLabelDark: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: Fonts.medium,
     color: Colors.textSecondary,
     marginBottom: 2,
   },
   cubicValueLight: {
-    fontSize: 22,
+    fontSize: 18,
     fontFamily: Fonts.black,
     color: Colors.white,
   },
   cubicValueDark: {
-    fontSize: 22,
+    fontSize: 18,
     fontFamily: Fonts.black,
     color: Colors.text,
   },
   cubicStatusLight: {
-    fontSize: 9,
+    fontSize: 8,
     fontFamily: Fonts.bold,
     color: 'rgba(255,255,255,0.6)',
     marginTop: 4,
     textTransform: 'uppercase',
   },
   cubicStatusDark: {
-    fontSize: 9,
+    fontSize: 8,
     fontFamily: Fonts.bold,
     color: Colors.textLight,
     marginTop: 4,

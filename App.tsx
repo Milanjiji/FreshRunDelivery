@@ -1,15 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   SafeAreaView,
   StyleSheet,
   Alert,
 } from 'react-native';
+import messaging from '@react-native-firebase/messaging';
 import { storage } from './src/utils/storage';
 import LoginScreen from './src/screens/LoginScreen';
 import RegistrationScreen from './src/screens/RegistrationScreen';
 import ApprovalStatusScreen from './src/screens/ApprovalStatusScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import SplashScreen from './src/screens/SplashScreen';
+import { 
+  requestNotificationPermission, 
+  createNotificationChannels, 
+  registerFCMToken, 
+  setupFCMListeners 
+} from './src/utils/notifications';
 
 
 import { API_BASE_URL } from './src/config/api';
@@ -22,10 +29,41 @@ function App() {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  /**
-   * On app start: load stored credentials and re-check approval status from server
-   * This ensures that if they were approved while the app was closed, they see home.
-   */
+  // FCM Setup
+  useEffect(() => {
+    if (userToken && userData?.id && userData?.approvalStatus === 'approved') {
+      const initFCM = async () => {
+        try {
+          const hasPermission = await requestNotificationPermission();
+          if (hasPermission) {
+            await createNotificationChannels();
+            const token = await messaging().getToken();
+            await registerFCMToken(userData.id, token);
+            
+            // Listen for token refresh
+            const unsubscribeTokenRefresh = messaging().onTokenRefresh(async newToken => {
+              await registerFCMToken(userData.id, newToken);
+            });
+
+            const cleanupListeners = setupFCMListeners(null); // Pass navigation ref if available
+
+            return () => {
+              unsubscribeTokenRefresh();
+              cleanupListeners();
+            };
+          }
+        } catch (error) {
+          console.error('[FCM] Init error:', error);
+        }
+      };
+
+      const cleanup = initFCM();
+      return () => {
+        if (typeof cleanup === 'function') (cleanup as any)();
+      };
+    }
+  }, [userToken, userData?.id, userData?.approvalStatus]);
+
   useEffect(() => {
     const initApp = async () => {
       console.log('[App] Initializing session...');
@@ -35,12 +73,9 @@ function App() {
 
         if (token && data) {
           console.log('[App] Found valid cached session. Logging in immediately...');
-          
-          // 1. Log in immediately with cached data so the user isn't stuck on login screen
           setUserToken(token);
           setUserData(data);
 
-          // 2. Background check for fresh data/approval status
           try {
             console.log('[App] Refreshing user data in background...');
             const response = await fetch(`${BACKEND_URL}/user/profile`, {

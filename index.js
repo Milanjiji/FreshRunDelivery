@@ -1,17 +1,22 @@
-/**
- * @format
- */
-
-import React from 'react';
-import { AppRegistry, Text, TextInput } from 'react-native';
+import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
+import messaging from '@react-native-firebase/messaging';
+import notifee from '@notifee/react-native';
 
-// Global font configuration
-if (!Text.defaultProps) Text.defaultProps = {};
-Text.defaultProps.style = { fontFamily: 'Inter-Regular' };
-
-if (!TextInput.defaultProps) TextInput.defaultProps = {};
-TextInput.defaultProps.style = { fontFamily: 'Inter-Regular' };
+// Background message handler
+messaging().setBackgroundMessageHandler(async remoteMessage => {
+  console.log('[FCM] Message handled in the background!', remoteMessage);
+  
+  await notifee.displayNotification({
+    title: remoteMessage.notification?.title || 'Order Update',
+    body: remoteMessage.notification?.body || '',
+    android: {
+      channelId: remoteMessage.data?.type === 'new_order' ? 'new_orders' : 'order_updates',
+      pressAction: { id: 'default' },
+    },
+    data: remoteMessage.data,
+  });
+});
 
 AppRegistry.registerComponent(appName, () => App);

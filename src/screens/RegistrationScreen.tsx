@@ -13,6 +13,7 @@ import {
   Image,
   ActivityIndicator,
   StatusBar,
+  Linking,
 } from 'react-native';
 import { Camera, ChevronLeft, Trash2 } from 'lucide-react-native';
 import axios from 'axios';
@@ -25,6 +26,7 @@ import { Colors } from '../theme/colors';
 
 import { API_BASE_URL } from '../config/api';
 
+const PRIVACY_POLICY_URL = 'https://freshrun-admin.vercel.app/privacy';
 const BACKEND_URL = API_BASE_URL;
 const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dubgo0vue/image/upload";
 const UPLOAD_PRESET = "freshrun_preset";
@@ -64,16 +66,25 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       } as any);
       data.append('upload_preset', UPLOAD_PRESET);
 
-      const response = await axios.post(CLOUDINARY_URL, data, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      console.log('Uploading image to Cloudinary:', CLOUDINARY_URL);
+      const response = await fetch(CLOUDINARY_URL, {
+        method: 'POST',
+        body: data,
       });
 
-      if (response.data.secure_url) {
-        setAadharImage(response.data.secure_url);
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Cloudinary status: ${response.status} - ${errText}`);
+      }
+
+      const resData = await response.json();
+
+      if (resData.secure_url) {
+        setAadharImage(resData.secure_url);
         Alert.alert('Success', 'Aadhar Card uploaded successfully!');
       }
     } catch (error: any) {
-      console.error('[CloudinaryUpload] error:', error);
+      console.error('[CloudinaryUpload] error:', error.message || error);
       Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
     } finally {
       setUploading(false);
@@ -235,8 +246,12 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>By joining, you agree to our </Text>
+            <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+              <Text style={styles.linkText}>Privacy Policy</Text>
+            </TouchableOpacity>
+            <Text style={styles.footerText}> & </Text>
             <TouchableOpacity>
-              <Text style={styles.linkText}>Terms & Conditions</Text>
+              <Text style={styles.linkText}>Terms</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>

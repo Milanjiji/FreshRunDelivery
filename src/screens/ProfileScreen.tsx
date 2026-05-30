@@ -36,6 +36,8 @@ import {
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 
+const PRIVACY_POLICY_URL = 'https://freshrun-admin.vercel.app/privacy';
+
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogout }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [aadharExpanded, setAadharExpanded] = useState(false);
@@ -232,14 +234,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
 
         <View style={styles.menuCard}>
           {[
-            { icon: <History size={20} color={Colors.textSecondary} />, label: 'Delivery History' },
-            { icon: <BarChart3 size={20} color={Colors.textSecondary} />, label: 'Earnings Report' },
-            { icon: <Bell size={20} color={Colors.textSecondary} />, label: 'Notifications' },
-            { icon: <ShieldCheck size={20} color={Colors.textSecondary} />, label: 'Privacy Policy' },
+            { id: 'h1', icon: <History size={20} color={Colors.textSecondary} />, label: 'Delivery History' },
+            { id: 'h2', icon: <BarChart3 size={20} color={Colors.textSecondary} />, label: 'Earnings Report' },
+            { id: 'h3', icon: <Bell size={20} color={Colors.textSecondary} />, label: 'Notifications' },
+            { id: 'h4', icon: <ShieldCheck size={20} color={Colors.textSecondary} />, label: 'Privacy Policy' },
           ].map((item, i, arr) => (
             <TouchableOpacity
               key={item.label}
               style={[styles.menuItem, i === arr.length - 1 && styles.menuItemLast]}
+              onPress={item.id === 'h4' ? () => Linking.openURL(PRIVACY_POLICY_URL) : undefined}
             >
               <View style={styles.menuItemLeft}>
                 <View style={{ marginRight: 14 }}>{item.icon}</View>
