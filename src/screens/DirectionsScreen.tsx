@@ -13,9 +13,12 @@ import {
   Dimensions,
   PermissionsAndroid,
   Platform,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapViewDirections from 'react-native-maps-directions';
 import io from 'socket.io-client';
 import {
   ChevronLeft,
@@ -32,6 +35,7 @@ import { API_BASE_URL } from '../config/api';
 
 const BACKEND_URL = API_BASE_URL;
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const GOOGLE_MAPS_APIKEY = 'AIzaSyC1s78p6_QNfF7eoMbKnMcu5wLqOdLyN9g';
 
 const parseCoordinate = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') {
@@ -61,6 +65,33 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [resolvedOrder, setResolvedOrder] = useState<any>(order);
+
+  const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [directionsOrigin, setDirectionsOrigin] = useState<{ latitude: number; longitude: number } | null>(null);
+  const lastDirectionsUpdate = useRef<number>(0);
+
+  // DRAGGABLE BOTTOM SHEET LOGIC
+  // Initially map is 70% (30% for sheet). We use a fixed height for the sheet.
+  const INITIAL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.3;
+  const sheetHeight = useRef(new Animated.Value(INITIAL_SHEET_HEIGHT)).current;
+  const lastSheetHeight = useRef(INITIAL_SHEET_HEIGHT);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderMove: (evt, gestureState) => {
+        const newHeight = lastSheetHeight.current - gestureState.dy;
+        // Limit height between 20% and 85% of screen
+        if (newHeight > SCREEN_HEIGHT * 0.2 && newHeight < SCREEN_HEIGHT * 0.85) {
+          sheetHeight.setValue(newHeight);
+        }
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        // Sync raw value for next interaction
+        lastSheetHeight.current = (sheetHeight as any)._value;
+      },
+    })
+  ).current;
 
   // Maintain local states to update UI dynamically without closing the screen
   const [localStatus, setLocalStatus] = useState<string>(order?.status || 'pending');
@@ -114,19 +145,49 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     let cancelled = false;
 
     const startTracking = async () => {
-      if (localStatus !== 'out_for_delivery' || localCompleted) {
-        return;
-      }
-
       const hasPermission = await requestLocationPermission();
       if (!hasPermission) {
-        setTrackingError('Location permission is required to share live delivery updates.');
+        setTrackingError('Location permission is required for navigation and sharing live updates.');
         return;
       }
 
       setTrackingError(null);
+      
+      Geolocation.getCurrentPosition(
+        (position) => {
+          if (!cancelled) {
+            const coords = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            };
+            setCurrentLocation(coords);
+            setDirectionsOrigin(coords); 
+            lastDirectionsUpdate.current = Date.now();
+          }
+        },
+        (error) => console.warn('Initial location error:', error),
+        { enableHighAccuracy: true }
+      );
+
       const emitLocation = (position: any) => {
-        if (socketRef.current && order.id && !cancelled) {
+        if (cancelled) return;
+
+        const newCoords = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+
+        setCurrentLocation(newCoords);
+
+        const now = Date.now();
+        const timePassed = now - lastDirectionsUpdate.current;
+        
+        if (!directionsOrigin || timePassed > 120000) { 
+           setDirectionsOrigin(newCoords);
+           lastDirectionsUpdate.current = now;
+        }
+
+        if (socketRef.current && order.id && localStatus === 'out_for_delivery' && !localCompleted) {
           socketRef.current.emit('update_delivery_location', {
             orderId: order.id,
             latitude: position.coords.latitude,
@@ -204,28 +265,30 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   );
 
   const fitMapToMarkers = useCallback(() => {
-    if (!mapReady || !mapRef.current || storeLat === null || storeLng === null) {
+    if (!mapReady || !mapRef.current) {
       return;
     }
 
+    const coords = [];
+    if (currentLocation) {
+       coords.push(currentLocation);
+    }
+    
+    // Always fit the Store and Customer in the view so the whole path is visible
+    if (storeLat !== null && storeLng !== null) {
+        coords.push({ latitude: storeLat, longitude: storeLng });
+    }
     if (userLat !== null && userLng !== null) {
-      mapRef.current.fitToCoordinates([
-        { latitude: storeLat, longitude: storeLng },
-        { latitude: userLat, longitude: userLng }
-      ], {
+        coords.push({ latitude: userLat, longitude: userLng });
+    }
+
+    if (coords.length >= 2) {
+      mapRef.current.fitToCoordinates(coords, {
         edgePadding: { top: 100, right: 60, bottom: 100, left: 60 },
         animated: true,
       });
-      return;
     }
-
-    mapRef.current.animateToRegion({
-      latitude: storeLat,
-      longitude: storeLng,
-      latitudeDelta: 0.05,
-      longitudeDelta: 0.05,
-    }, 350);
-  }, [mapReady, storeLat, storeLng, userLat, userLng]);
+  }, [currentLocation, mapReady, storeLat, storeLng, userLat, userLng]);
 
   useEffect(() => {
     fitMapToMarkers();
@@ -252,6 +315,8 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             onPress: () => {
               setLocalOpted(true);
               setLocalStatus('assigned');
+              setDirectionsOrigin(currentLocation); 
+              lastDirectionsUpdate.current = Date.now();
               onRefresh();
               onBack();
             },
@@ -292,6 +357,8 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             onPress: () => {
               setLocalStatus('out_for_delivery');
               setLocalGivenToDelivery(true);
+              setDirectionsOrigin(currentLocation); 
+              lastDirectionsUpdate.current = Date.now();
               onRefresh();
             },
           },
@@ -373,7 +440,6 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     return 'Order confirmed by store and is currently being processed.';
   };
 
-  // Dynamic box counting
   const boxesCount =
     orderData?.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1;
   const weightVal = (boxesCount * 0.8).toFixed(1) + 'kgs';
@@ -382,8 +448,8 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent={true} />
 
-      {/* ── MAP VIEW (No top header bar, extends under status bar) ────────────────── */}
-      <View style={styles.mapContainer}>
+      {/* ── MAP VIEW (Dynamic height) ── */}
+      <Animated.View style={[styles.mapContainer, { height: Animated.subtract(SCREEN_HEIGHT, sheetHeight) }]}>
         {storeLat !== null && storeLng !== null ? (
           <MapView
             ref={mapRef}
@@ -391,13 +457,23 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             style={styles.map}
             onMapReady={() => setMapReady(true)}
             initialRegion={{
-              latitude: storeLat,
-              longitude: storeLng,
+              latitude: storeLat || 0,
+              longitude: storeLng || 0,
               latitudeDelta: 0.05,
               longitudeDelta: 0.05,
             }}
           >
-            {/* Pickup Store Marker */}
+            {currentLocation && (
+              <Marker
+                coordinate={currentLocation}
+                title="Your Location"
+              >
+                 <View style={styles.driverMarker}>
+                    <Truck size={18} color="#fff" />
+                 </View>
+              </Marker>
+            )}
+
             <Marker
               coordinate={{ latitude: storeLat, longitude: storeLng }}
               title="Pickup Store"
@@ -405,7 +481,6 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               pinColor={Colors.secondary}
             />
 
-            {/* Delivery Point Marker */}
             {userLat !== null && userLng !== null && (
               <Marker
                 coordinate={{ latitude: userLat, longitude: userLng }}
@@ -415,16 +490,28 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               />
             )}
 
-            {/* Path Line */}
-            {userLat !== null && userLng !== null && (
-              <Polyline
-                coordinates={[
-                  { latitude: storeLat, longitude: storeLng },
-                  { latitude: userLat, longitude: userLng }
-                ]}
+            {directionsOrigin && (
+              ((localStatus === 'out_for_delivery' || localGivenToDelivery) && userLat !== null && userLng !== null) ||
+              (!(localStatus === 'out_for_delivery' || localGivenToDelivery) && storeLat !== null && storeLng !== null)
+            ) && (
+              <MapViewDirections
+                origin={directionsOrigin}
+                destination={{ latitude: userLat!, longitude: userLng! }}
+                waypoints={
+                   (!localGivenToDelivery && storeLat !== null && storeLng !== null) 
+                    ? [{ latitude: storeLat, longitude: storeLng }] 
+                    : undefined
+                }
+                apikey={GOOGLE_MAPS_APIKEY}
+                strokeWidth={4}
                 strokeColor={Colors.primary}
-                strokeWidth={3}
-                lineDashPattern={[10, 10]}
+                optimizeWaypoints={true}
+                onReady={result => {
+                  console.log(`[Directions] Dist: ${result.distance}km, Dur: ${result.duration}min`);
+                }}
+                onError={(errorMessage) => {
+                  console.log('MapViewDirections Error:', errorMessage);
+                }}
               />
             )}
           </MapView>
@@ -441,190 +528,182 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           </View>
         )}
         
-        {/* Header Overlay (Close/Back button) */}
         <SafeAreaView style={styles.headerOverlay} pointerEvents="box-none">
           <TouchableOpacity style={styles.backBtnCircle} onPress={onBack}>
             <ChevronLeft size={24} color={Colors.text} />
           </TouchableOpacity>
         </SafeAreaView>
-      </View>
+      </Animated.View>
 
-      {/* ── DETAILS PANEL (Scrollable Bottom Half) ──────────────────────── */}
-      <ScrollView
-        style={styles.detailsScroll}
-        contentContainerStyle={styles.detailsContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.dragHandle} />
-
-        {/* Status Title (matches customer app style) */}
-        <Text style={styles.statusTitle}>{getStatusDisplay()}</Text>
-        <Text style={styles.statusDesc}>{getStatusDescription()}</Text>
-
-        {/* Tracking Flow Stages */}
-        <View style={styles.stagesRow}>
-          {/* Stage 1: Confirmed */}
-          <View style={styles.stageItem}>
-            <View style={[styles.stageDot, styles.stageDotActive]} />
-            <Text style={styles.stageTextActive}>Confirmed</Text>
-          </View>
-          <View style={[styles.stageLine, (orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive]} />
-
-          {/* Stage 2: Packed */}
-          <View style={styles.stageItem}>
-            <View
-              style={[
-                styles.stageDot,
-                (orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) &&
-                  styles.stageDotActive,
-              ]}
-            />
-            <Text
-              style={
-                orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted
-                  ? styles.stageTextActive
-                  : styles.stageText
-              }
-            >
-              Packed
-            </Text>
-          </View>
-          <View style={[styles.stageLine, (localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive]} />
-
-          {/* Stage 3: Dispatched */}
-          <View style={styles.stageItem}>
-            <View
-              style={[
-                styles.stageDot,
-                (localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive,
-              ]}
-            />
-            <Text
-              style={
-                localStatus === 'out_for_delivery' || localCompleted
-                  ? styles.stageTextActive
-                  : styles.stageText
-              }
-            >
-              Dispatched
-            </Text>
-          </View>
-          <View style={[styles.stageLine, localCompleted && styles.stageDotActive]} />
-
-          {/* Stage 4: Delivered */}
-          <View style={styles.stageItem}>
-            <View style={[styles.stageDot, localCompleted && styles.stageDotActive]} />
-            <Text style={localCompleted ? styles.stageTextActive : styles.stageText}>Delivered</Text>
-          </View>
+      {/* ── DRAGGABLE DETAILS PANEL ── */}
+      <Animated.View style={[styles.detailsContainer, { height: sheetHeight }]}>
+        <View style={styles.dragHandleContainer} {...panResponder.panHandlers}>
+           <View style={styles.dragHandle} />
         </View>
 
-        <View style={styles.divider} />
+        <ScrollView
+          style={styles.detailsScroll}
+          contentContainerStyle={styles.detailsContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.statusTitle}>{getStatusDisplay()}</Text>
+          <Text style={styles.statusDesc}>{getStatusDescription()}</Text>
 
-        {/* Store Info (Pickup Point) */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pickup Point</Text>
-          <View style={styles.card}>
-            <View style={styles.cardIconCircle}>
-              <ShoppingBag size={20} color={Colors.primary} />
+          <View style={styles.stagesRow}>
+            <View style={styles.stageItem}>
+              <View style={[styles.stageDot, styles.stageDotActive]} />
+              <Text style={styles.stageTextActive}>Confirmed</Text>
             </View>
-            <View style={styles.cardDetails}>
-              <Text style={styles.cardMainText}>{orderData.store_name || 'FreshRun Partner Store'}</Text>
-              <View style={styles.addressRow}>
-                <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
-                <Text style={styles.cardSubText}>{orderData.store_address || 'Store location address line'}</Text>
+            <View style={[styles.stageLine, (orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive]} />
+
+            <View style={styles.stageItem}>
+              <View
+                style={[
+                  styles.stageDot,
+                  (orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted) &&
+                    styles.stageDotActive,
+                ]}
+              />
+              <Text
+                style={
+                  orderData?.is_packed || localStatus === 'packed' || localStatus === 'out_for_delivery' || localCompleted
+                    ? styles.stageTextActive
+                    : styles.stageText
+                }
+              >
+                Packed
+              </Text>
+            </View>
+            <View style={[styles.stageLine, (localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive]} />
+
+            <View style={styles.stageItem}>
+              <View
+                style={[
+                  styles.stageDot,
+                  (localStatus === 'out_for_delivery' || localCompleted) && styles.stageDotActive,
+                ]}
+              />
+              <Text
+                style={
+                  localStatus === 'out_for_delivery' || localCompleted
+                    ? styles.stageTextActive
+                    : styles.stageText
+                }
+              >
+                Dispatched
+              </Text>
+            </View>
+            <View style={[styles.stageLine, localCompleted && styles.stageDotActive]} />
+
+            <View style={styles.stageItem}>
+              <View style={[styles.stageDot, localCompleted && styles.stageDotActive]} />
+              <Text style={localCompleted ? styles.stageTextActive : styles.stageText}>Delivered</Text>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Pickup Point</Text>
+            <View style={styles.card}>
+              <View style={styles.cardIconCircle}>
+                <ShoppingBag size={20} color={Colors.primary} />
               </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Customer & Delivery Address */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Delivery Destination</Text>
-          <View style={styles.card}>
-            <View style={[styles.cardIconCircle, { backgroundColor: Colors.secondaryLight }]}>
-              <MapPin size={20} color={Colors.secondary} />
-            </View>
-            <View style={styles.cardDetails}>
-              <Text style={styles.cardMainText}>{orderData.user_name || 'Guest Customer'}</Text>
-              <View style={styles.addressRow}>
-                <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
-                <Text style={styles.cardSubText}>
-                  {orderData.delivery_address?.line1 || 'Address details not fully defined'}
-                </Text>
-              </View>
-            </View>
-            {localOpted && (
-              <TouchableOpacity style={styles.phoneBtn} onPress={handleCall}>
-                <Phone size={18} color="#fff" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Package & Weight info */}
-        <View style={styles.metaRow}>
-          <View style={styles.metaBox}>
-            <Text style={styles.metaLabel}>Boxes</Text>
-            <Text style={styles.metaValue}>{boxesCount}</Text>
-          </View>
-          <View style={styles.metaBox}>
-            <Text style={styles.metaLabel}>Approx Wt</Text>
-            <Text style={styles.metaValue}>{weightVal}</Text>
-          </View>
-          <View style={styles.metaBox}>
-            <Text style={styles.metaLabel}>Items Type</Text>
-            <Text style={styles.metaValue}>{orderData.items?.length || 0} unique</Text>
-          </View>
-        </View>
-
-        {/* Items List */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Items Checklist</Text>
-          <View style={styles.itemsCard}>
-            {orderData.items?.map((item: any, idx: number) => (
-              <View key={idx} style={styles.itemRow}>
-                <View style={styles.itemQtyWrap}>
-                  <Text style={styles.itemQtyText}>{item.quantity || 1}x</Text>
+              <View style={styles.cardDetails}>
+                <Text style={styles.cardMainText}>{orderData.store_name || 'FreshRun Partner Store'}</Text>
+                <View style={styles.addressRow}>
+                  <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
+                  <Text style={styles.cardSubText}>{orderData.store_address || 'Store location address line'}</Text>
                 </View>
-                <Text style={styles.itemNameText} numberOfLines={1}>
-                  {item.name || 'Product Item'}
-                </Text>
-                <Text style={styles.itemPriceText}>₹{((item.price || 0) * (item.quantity || 1)).toFixed(2)}</Text>
               </View>
-            ))}
-            <View style={styles.itemDivider} />
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabelText}>Bill Total</Text>
-              <Text style={styles.totalValueText}>₹{parseFloat(orderData.total_amount || 0).toFixed(2)}</Text>
             </View>
           </View>
-        </View>
-      </ScrollView>
 
-      {/* ── ACTION FOOTER BUTTON ────────────────────────────────────────── */}
-      <View style={styles.footer}>
-        {actionLoading ? (
-          <ActivityIndicator size="large" color={Colors.primary} style={{ marginVertical: 10 }} />
-        ) : !localOpted ? (
-          <TouchableOpacity style={styles.mainActionBtn} onPress={handleOptIn}>
-            <Text style={styles.mainActionBtnText}>Accept Pickup</Text>
-          </TouchableOpacity>
-        ) : !localGivenToDelivery ? (
-          <TouchableOpacity style={[styles.mainActionBtn, { backgroundColor: Colors.secondary }]} onPress={handleMarkPickedUp}>
-            <Truck size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.mainActionBtnText}>Mark as Picked Up</Text>
-          </TouchableOpacity>
-        ) : !localCompleted ? (
-          <TouchableOpacity style={[styles.mainActionBtn, { backgroundColor: Colors.success }]} onPress={handleMarkDelivered}>
-            <CheckCircle size={18} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.mainActionBtnText}>Mark as Delivered</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.completedBadge}>
-            <Text style={styles.completedBadgeText}>Completed</Text>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Delivery Destination</Text>
+            <View style={styles.card}>
+              <View style={[styles.cardIconCircle, { backgroundColor: Colors.secondaryLight }]}>
+                <MapPin size={20} color={Colors.secondary} />
+              </View>
+              <View style={styles.cardDetails}>
+                <Text style={styles.cardMainText}>{orderData.user_name || 'Guest Customer'}</Text>
+                <View style={styles.addressRow}>
+                  <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
+                  <Text style={styles.cardSubText}>
+                    {orderData.delivery_address?.line1 || 'Address details not fully defined'}
+                  </Text>
+                </View>
+              </View>
+              {localOpted && (
+                <TouchableOpacity style={styles.phoneBtn} onPress={handleCall}>
+                  <Phone size={18} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-        )}
-      </View>
+
+          <View style={styles.metaRow}>
+            <View style={styles.metaBox}>
+              <Text style={styles.metaLabel}>Boxes</Text>
+              <Text style={styles.metaValue}>{boxesCount}</Text>
+            </View>
+            <View style={styles.metaBox}>
+              <Text style={styles.metaLabel}>Approx Wt</Text>
+              <Text style={styles.metaValue}>{weightVal}</Text>
+            </View>
+            <View style={styles.metaBox}>
+              <Text style={styles.metaLabel}>Items Type</Text>
+              <Text style={styles.metaValue}>{orderData.items?.length || 0} unique</Text>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Items Checklist</Text>
+            <View style={styles.itemsCard}>
+              {orderData.items?.map((item: any, idx: number) => (
+                <View key={idx} style={styles.itemRow}>
+                  <View style={styles.itemQtyWrap}>
+                    <Text style={styles.itemQtyText}>{item.quantity || 1}x</Text>
+                  </View>
+                  <Text style={styles.itemNameText} numberOfLines={1}>
+                    {item.name || 'Product Item'}
+                  </Text>
+                  <Text style={styles.itemPriceText}>₹{((item.price || 0) * (item.quantity || 1)).toFixed(2)}</Text>
+                </View>
+              ))}
+              <View style={styles.itemDivider} />
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabelText}>Bill Total</Text>
+                <Text style={styles.totalValueText}>₹{parseFloat(orderData.total_amount || 0).toFixed(2)}</Text>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          {actionLoading ? (
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginVertical: 10 }} />
+          ) : !localOpted ? (
+            <TouchableOpacity style={styles.mainActionBtn} onPress={handleOptIn}>
+              <Text style={styles.mainActionBtnText}>Accept Pickup</Text>
+            </TouchableOpacity>
+          ) : !localGivenToDelivery ? (
+            <TouchableOpacity style={[styles.mainActionBtn, { backgroundColor: Colors.secondary }]} onPress={handleMarkPickedUp}>
+              <Truck size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.mainActionBtnText}>Mark as Picked Up</Text>
+            </TouchableOpacity>
+          ) : !localCompleted ? (
+            <TouchableOpacity style={[styles.mainActionBtn, { backgroundColor: Colors.success }]} onPress={handleMarkDelivered}>
+              <CheckCircle size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.mainActionBtnText}>Mark as Delivered</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.completedBadge}>
+              <Text style={styles.completedBadgeText}>Completed</Text>
+            </View>
+          )}
+        </View>
+      </Animated.View>
     </View>
   );
 };
@@ -636,7 +715,7 @@ const styles = StyleSheet.create({
   },
   headerOverlay: {
     position: 'absolute',
-    top: 30, // Account for translucent status bar
+    top: 30, 
     left: 0,
     right: 0,
     paddingHorizontal: 15,
@@ -657,12 +736,21 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   mapContainer: {
-    height: SCREEN_HEIGHT * 0.52,
+    flex: 1,
     backgroundColor: '#e5e5e5',
     position: 'relative',
+    width: '100%',
   },
   map: {
     flex: 1,
+  },
+  driverMarker: {
+    backgroundColor: Colors.primary,
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#fff',
+    elevation: 5,
   },
   mapErrorContainer: {
     flex: 1,
@@ -695,25 +783,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-  detailsScroll: {
-    flex: 1,
+  detailsContainer: {
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    marginTop: -28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
   },
-  detailsContent: {
-    padding: 20,
-    paddingTop: 12,
-    paddingBottom: 30,
+  dragHandleContainer: {
+    width: '100%',
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   dragHandle: {
     width: 40,
     height: 5,
     backgroundColor: '#e0e0e0',
     borderRadius: 3,
-    alignSelf: 'center',
-    marginBottom: 15,
+  },
+  detailsScroll: {
+    flex: 1,
+  },
+  detailsContent: {
+    padding: 20,
+    paddingTop: 0,
+    paddingBottom: 30,
   },
   statusTitle: {
     fontSize: 20,
