@@ -29,6 +29,7 @@ import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 import ProfileScreen from './ProfileScreen';
 import DirectionsScreen from './DirectionsScreen';
+import DebugMapScreen from './DebugMapScreen';
 
 import { API_BASE_URL } from '../config/api';
 
@@ -47,6 +48,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
   const [activeTab, setActiveTab] = useState<TabType>('pickups');
   const [searchText, setSearchText] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+  const [showDebugMap, setShowDebugMap] = useState(false);
 
   // Dynamic state loaded from the backend APIs
   const [pickups, setPickups] = useState<any[]>([]);
@@ -185,6 +187,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
     );
   }
 
+  if (showDebugMap) {
+    return <DebugMapScreen onBack={() => setShowDebugMap(false)} />;
+  }
+
   if (showProfile) {
     return (
       <ProfileScreen
@@ -244,7 +250,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
               <Bell size={20} color={Colors.text} />
               <View style={styles.notifBadge} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.profileCircle} onPress={() => setShowProfile(true)}>
+            <TouchableOpacity
+              style={styles.profileCircle}
+              onPress={() => setShowProfile(true)}
+              onLongPress={() => setShowDebugMap(true)}
+              delayLongPress={1000}
+            >
               <User size={22} color={Colors.text} />
             </TouchableOpacity>
           </View>

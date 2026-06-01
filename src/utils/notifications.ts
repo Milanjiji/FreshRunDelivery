@@ -45,6 +45,7 @@ export async function createNotificationChannels() {
  */
 export async function registerFCMToken(userId: string, token: string) {
   try {
+    console.log('[FCM] Registering token with backend for user:', userId, token);
     const response = await fetch(`${API_BASE_URL}/drivers/${userId}/fcm-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -52,12 +53,13 @@ export async function registerFCMToken(userId: string, token: string) {
     });
     
     if (response.ok) {
-      console.log('[FCM] Token registered with backend');
+      console.log('[FCM] Token registered with backend successfully');
     } else {
-      console.error('[FCM] Failed to register token:', await response.text());
+      const errorText = await response.text();
+      console.error('[FCM] Failed to register token with backend:', response.status, errorText);
     }
   } catch (error) {
-    console.error('[FCM] Error registering token:', error);
+    console.error('[FCM] Error registering token with backend:', error);
   }
 }
 
@@ -65,20 +67,27 @@ export async function registerFCMToken(userId: string, token: string) {
  * Setup FCM listeners
  */
 export function setupFCMListeners(navigationRef: any) {
+  console.log('[FCM] Setting up listeners...');
+  
   // Handle foreground messages
   const unsubscribeOnMessage = messaging().onMessage(async remoteMessage => {
-    console.log('[FCM] Foreground message:', remoteMessage);
+    console.log('[FCM] Foreground Message received:', JSON.stringify(remoteMessage, null, 2));
     
-    // Display local notification using Notifee
-    await notifee.displayNotification({
-      title: remoteMessage.notification?.title || 'Order Update',
-      body: remoteMessage.notification?.body || '',
-      android: {
-        channelId: remoteMessage.data?.type === 'new_order' ? 'new_orders' : 'order_updates',
-        pressAction: { id: 'default' },
-      },
-      data: remoteMessage.data,
-    });
+    try {
+      // Display local notification using Notifee
+      await notifee.displayNotification({
+        title: remoteMessage.notification?.title || remoteMessage.data?.title || 'Order Update',
+        body: remoteMessage.notification?.body || remoteMessage.data?.body || '',
+        android: {
+          channelId: remoteMessage.data?.type === 'new_order' ? 'new_orders' : 'order_updates',
+          pressAction: { id: 'default' },
+        },
+        data: remoteMessage.data,
+      });
+      console.log('[FCM] Foreground notification displayed via Notifee');
+    } catch (err) {
+      console.error('[FCM] Error displaying foreground notification:', err);
+    }
   });
 
   // Handle background/quit state notification clicks

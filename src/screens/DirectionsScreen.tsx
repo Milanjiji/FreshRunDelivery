@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,12 @@ import {
   Alert,
   Linking,
   Dimensions,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import Geolocation from '@react-native-community/geolocation';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import io from 'socket.io-client';
 import {
   ChevronLeft,
   MapPin,
@@ -29,6 +33,15 @@ import { API_BASE_URL } from '../config/api';
 const BACKEND_URL = API_BASE_URL;
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const parseCoordinate = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const parsedValue = typeof value === 'number' ? value : parseFloat(String(value));
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+};
+
 interface DirectionsScreenProps {
   order: any;
   userToken: string | null;
@@ -42,8 +55,11 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   onBack,
   onRefresh,
 }) => {
-  const webViewRef = useRef<WebView>(null);
+  const mapRef = useRef<MapView>(null);
+  const socketRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
   const [resolvedOrder, setResolvedOrder] = useState<any>(order);
 
   // Maintain local states to update UI dynamically without closing the screen
@@ -54,6 +70,95 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   );
   const [localCompleted, setLocalCompleted] = useState<boolean>(order?.is_completed || false);
   const orderData = resolvedOrder || order;
+
+  // Socket Connection for real-time location sharing
+  useEffect(() => {
+    socketRef.current = io(BACKEND_URL);
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, []);
+
+  const requestLocationPermission = useCallback(async () => {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
+    const alreadyGranted = await PermissionsAndroid.check(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+    );
+    if (alreadyGranted) {
+      return true;
+    }
+
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      {
+        title: 'Delivery Location Permission',
+        message: 'FreshRun needs your location while this screen is open to update the customer during delivery.',
+        buttonNeutral: 'Ask Me Later',
+        buttonNegative: 'Cancel',
+        buttonPositive: 'OK',
+      }
+    );
+
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  }, []);
+
+  // Track and emit location while the active delivery screen remains open.
+  useEffect(() => {
+    let watchId: number | null = null;
+    let cancelled = false;
+
+    const startTracking = async () => {
+      if (localStatus !== 'out_for_delivery' || localCompleted) {
+        return;
+      }
+
+      const hasPermission = await requestLocationPermission();
+      if (!hasPermission) {
+        setTrackingError('Location permission is required to share live delivery updates.');
+        return;
+      }
+
+      setTrackingError(null);
+      const emitLocation = (position: any) => {
+        if (socketRef.current && order.id && !cancelled) {
+          socketRef.current.emit('update_delivery_location', {
+            orderId: order.id,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          });
+        }
+      };
+
+      watchId = Geolocation.watchPosition(
+        emitLocation,
+        (error) => {
+          console.warn('Location tracking error:', error);
+          setTrackingError(error.message || 'Unable to share live delivery location.');
+        },
+        {
+          enableHighAccuracy: true,
+          distanceFilter: 10,
+          interval: 10000,
+          fastestInterval: 5000,
+        }
+      );
+    };
+
+    startTracking();
+
+    return () => {
+      cancelled = true;
+      if (watchId !== null) {
+        Geolocation.clearWatch(watchId);
+      }
+    };
+  }, [localCompleted, localStatus, order.id, requestLocationPermission]);
 
   useEffect(() => {
     let isMounted = true;
@@ -85,187 +190,46 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   }, [order?.id, userToken]);
 
   // Parse Coordinates
-  const storeLat = parseFloat(orderData?.store_lat) || 11.2588;
-  const storeLng = parseFloat(orderData?.store_lng) || 75.7804;
+  const storeLat = parseCoordinate(orderData?.store_lat);
+  const storeLng = parseCoordinate(orderData?.store_lng);
+  const userLat = parseCoordinate(
+    orderData?.delivery_address?.latitude ??
+    orderData?.delivery_address?.lat ??
+    orderData?.user_lat
+  );
+  const userLng = parseCoordinate(
+    orderData?.delivery_address?.longitude ??
+    orderData?.delivery_address?.lng ??
+    orderData?.user_lng
+  );
 
-  // Try every possible field name the backend might return for customer coords
-  const rawUserLat =
-    orderData?.delivery_address?.latitude ||
-    orderData?.delivery_address?.lat ||
-    orderData?.user_lat ||
-    null;
-  const rawUserLng =
-    orderData?.delivery_address?.longitude ||
-    orderData?.delivery_address?.lng ||
-    orderData?.user_lng ||
-    null;
+  const fitMapToMarkers = useCallback(() => {
+    if (!mapReady || !mapRef.current || storeLat === null || storeLng === null) {
+      return;
+    }
 
-  const userLat = rawUserLat ? parseFloat(rawUserLat) : null;
-  const userLng = rawUserLng ? parseFloat(rawUserLng) : null;
+    if (userLat !== null && userLng !== null) {
+      mapRef.current.fitToCoordinates([
+        { latitude: storeLat, longitude: storeLng },
+        { latitude: userLat, longitude: userLng }
+      ], {
+        edgePadding: { top: 100, right: 60, bottom: 100, left: 60 },
+        animated: true,
+      });
+      return;
+    }
+
+    mapRef.current.animateToRegion({
+      latitude: storeLat,
+      longitude: storeLng,
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
+    }, 350);
+  }, [mapReady, storeLat, storeLng, userLat, userLng]);
 
   useEffect(() => {
-    console.log('\n📍 [DELIVERY APP MAP COORDINATES DEBUG] ──────────────────');
-    console.log(`   START (Store):    ${storeLat}, ${storeLng}`);
-    console.log(`   END (Customer):   ${userLat}, ${userLng}`);
-    console.log('   Raw order fields:');
-    console.log(`     order.user_lat         = ${orderData?.user_lat}`);
-    console.log(`     order.user_lng         = ${orderData?.user_lng}`);
-    console.log(`     delivery_address.latitude  = ${orderData?.delivery_address?.latitude}`);
-    console.log(`     delivery_address.longitude = ${orderData?.delivery_address?.longitude}`);
-    console.log(`     address_id             = ${orderData?.address_id}`);
-    console.log('─────────────────────────────────────────────────────────────\n');
-  }, [
-    orderData?.address_id,
-    orderData?.delivery_address?.latitude,
-    orderData?.delivery_address?.longitude,
-    orderData?.user_lat,
-    orderData?.user_lng,
-    storeLat,
-    storeLng,
-    userLat,
-    userLng,
-  ]);
-
-  // Leaflet HTML Content
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>
-        body { padding: 0; margin: 0; }
-        html, body, #map { height: 100%; width: 100%; }
-        .store-icon {
-          background-color: #0066FF;
-          border-radius: 50%;
-          border: 3px solid white;
-          box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          color: white;
-          font-weight: bold;
-          font-family: sans-serif;
-        }
-        .home-icon {
-          background-color: #60c547;
-          border-radius: 50%;
-          border: 3px solid white;
-          box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          color: white;
-          font-weight: bold;
-          font-family: sans-serif;
-        }
-        .zoom-capsule {
-          position: absolute;
-          bottom: 45px;
-          right: 15px;
-          z-index: 1000;
-          background-color: white;
-          border-radius: 20px;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          overflow: hidden;
-          border: 1px solid #eef0f2;
-        }
-        .zoom-btn {
-          width: 38px;
-          height: 38px;
-          background-color: white;
-          border: none;
-          color: #333;
-          font-size: 20px;
-          font-weight: bold;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          cursor: pointer;
-          outline: none;
-          -webkit-tap-highlight-color: transparent;
-        }
-        .zoom-btn:active {
-          background-color: #f0f0f0;
-        }
-        .zoom-divider {
-          width: 22px;
-          height: 1px;
-          background-color: #e2e8f0;
-        }
-      </style>
-    </head>
-    <body>
-      <div id="map"></div>
-      
-      <div class="zoom-capsule">
-        <button class="zoom-btn" onclick="zoomIn()">+</button>
-        <div class="zoom-divider"></div>
-        <button class="zoom-btn" onclick="zoomOut()">-</button>
-      </div>
-
-      <script>
-        var map;
-        function zoomIn() {
-          if (map) map.zoomIn();
-        }
-        function zoomOut() {
-          if (map) map.zoomOut();
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-          const storeLoc = [${storeLat}, ${storeLng}];
-          ${userLat !== null && userLng !== null
-            ? `const userLoc = [${userLat}, ${userLng}];`
-            : `const userLoc = null;`
-          }
-          
-          console.log("Leaflet Webview Console - Store Location:", storeLoc);
-          console.log("Leaflet Webview Console - Customer Location:", userLoc);
-
-          // Centre the map between the two points initially
-          const midLat = userLoc ? (storeLoc[0] + userLoc[0]) / 2 : storeLoc[0];
-          const midLng = userLoc ? (storeLoc[1] + userLoc[1]) / 2 : storeLoc[1];
-          map = L.map('map', { zoomControl: false }).setView([midLat, midLng], 13);
-
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-          }).addTo(map);
-
-          const storeHtml = '<div style="width: 100%; height: 100%;" class="store-icon">S</div>';
-          const homeHtml = '<div style="width: 100%; height: 100%;" class="home-icon">H</div>';
-
-          const storeIcon = L.divIcon({ html: storeHtml, className: '', iconSize: [32, 32], iconAnchor: [16, 16] });
-          const homeIcon = L.divIcon({ html: homeHtml, className: '', iconSize: [32, 32], iconAnchor: [16, 16] });
-
-          L.marker(storeLoc, { icon: storeIcon }).addTo(map).bindPopup('<b>Store: ${orderData?.store_name || 'Pickup Store'}</b>');
-
-          if (userLoc) {
-            L.marker(userLoc, { icon: homeIcon }).addTo(map).bindPopup('<b>Customer: ${orderData?.user_name || 'Delivery address'}</b>');
-
-            L.polyline([storeLoc, userLoc], {
-              color: '#60c547',
-              weight: 4,
-              dashArray: '8, 8'
-            }).addTo(map);
-
-            // Fit both markers into view with generous padding
-            const bounds = L.latLngBounds([storeLoc, userLoc]);
-            map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
-          } else {
-            // No customer coordinates - just show the store
-            map.setView(storeLoc, 14);
-          }
-        });
-      </script>
-    </body>
-    </html>
-  `;
+    fitMapToMarkers();
+  }, [fitMapToMarkers]);
 
   // ── ACTION HANDLERS ────────────────────────────────────────────────────────
 
@@ -420,13 +384,62 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
       {/* ── MAP VIEW (No top header bar, extends under status bar) ────────────────── */}
       <View style={styles.mapContainer}>
-        <WebView
-          ref={webViewRef}
-          source={{ html: htmlContent }}
-          style={styles.webview}
-          scrollEnabled={true}
-          bounces={false}
-        />
+        {storeLat !== null && storeLng !== null ? (
+          <MapView
+            ref={mapRef}
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+            style={styles.map}
+            onMapReady={() => setMapReady(true)}
+            initialRegion={{
+              latitude: storeLat,
+              longitude: storeLng,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+            }}
+          >
+            {/* Pickup Store Marker */}
+            <Marker
+              coordinate={{ latitude: storeLat, longitude: storeLng }}
+              title="Pickup Store"
+              description={orderData?.store_name}
+              pinColor={Colors.secondary}
+            />
+
+            {/* Delivery Point Marker */}
+            {userLat !== null && userLng !== null && (
+              <Marker
+                coordinate={{ latitude: userLat, longitude: userLng }}
+                title="Delivery Point"
+                description={orderData?.user_name}
+                pinColor={Colors.primary}
+              />
+            )}
+
+            {/* Path Line */}
+            {userLat !== null && userLng !== null && (
+              <Polyline
+                coordinates={[
+                  { latitude: storeLat, longitude: storeLng },
+                  { latitude: userLat, longitude: userLng }
+                ]}
+                strokeColor={Colors.primary}
+                strokeWidth={3}
+                lineDashPattern={[10, 10]}
+              />
+            )}
+          </MapView>
+        ) : (
+          <View style={styles.mapErrorContainer}>
+            <MapPin size={28} color={Colors.textSecondary} />
+            <Text style={styles.mapErrorText}>Pickup coordinates are missing for this order.</Text>
+          </View>
+        )}
+
+        {trackingError && (
+          <View style={styles.trackingErrorBanner}>
+            <Text style={styles.trackingErrorText}>{trackingError}</Text>
+          </View>
+        )}
         
         {/* Header Overlay (Close/Back button) */}
         <SafeAreaView style={styles.headerOverlay} pointerEvents="box-none">
@@ -648,8 +661,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#e5e5e5',
     position: 'relative',
   },
-  webview: {
+  map: {
     flex: 1,
+  },
+  mapErrorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef1f4',
+    paddingHorizontal: 30,
+  },
+  mapErrorText: {
+    color: Colors.textSecondary,
+    fontFamily: Fonts.medium,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  trackingErrorBanner: {
+    position: 'absolute',
+    bottom: 12,
+    left: 15,
+    right: 15,
+    backgroundColor: '#FFF1F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  trackingErrorText: {
+    color: '#B42318',
+    fontFamily: Fonts.medium,
+    fontSize: 12,
+    textAlign: 'center',
   },
   detailsScroll: {
     flex: 1,

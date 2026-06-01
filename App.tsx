@@ -38,6 +38,7 @@ function App() {
           if (hasPermission) {
             await createNotificationChannels();
             const token = await messaging().getToken();
+            console.log('[FCM] Token:', token);
             await registerFCMToken(userData.id, token);
             
             // Listen for token refresh
@@ -45,6 +46,7 @@ function App() {
               await registerFCMToken(userData.id, newToken);
             });
 
+            console.log('[FCM] Initializing listeners...');
             const cleanupListeners = setupFCMListeners(null); // Pass navigation ref if available
 
             return () => {
