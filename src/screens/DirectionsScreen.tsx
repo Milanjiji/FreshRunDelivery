@@ -221,34 +221,38 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     };
   }, [localCompleted, localStatus, order.id, requestLocationPermission]);
 
-  useEffect(() => {
-    let isMounted = true;
+  const fetchOrderDetails = useCallback(async () => {
+    if (!order?.id || !userToken) return;
 
-    const fetchOrderDetails = async () => {
-      if (!order?.id || !userToken) return;
+    try {
+      const response = await fetch(`${BACKEND_URL}/orders/${order.id}`, {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      });
 
-      try {
-        const response = await fetch(`${BACKEND_URL}/orders/${order.id}`, {
-          headers: {
-            Authorization: `Bearer ${userToken}`,
-          },
-        });
-
-        const result = await response.json();
-        if (isMounted && response.ok && result.success && result.order) {
-          setResolvedOrder(result.order);
-        }
-      } catch (error) {
-        console.warn('[DirectionsScreen] Failed to refresh order details:', error);
+      const result = await response.json();
+      if (response.ok && result.success && result.order) {
+        setResolvedOrder(result.order);
+        // Sync local states with server truth if needed
+        if (result.order.status) setLocalStatus(result.order.status);
+        if (result.order.is_given_to_delivery_boy !== undefined) 
+          setLocalGivenToDelivery(result.order.is_given_to_delivery_boy);
+        if (result.order.is_completed !== undefined)
+          setLocalCompleted(result.order.is_completed);
       }
-    };
-
-    fetchOrderDetails();
-
-    return () => {
-      isMounted = false;
-    };
+    } catch (error) {
+      console.warn('[DirectionsScreen] Failed to refresh order details:', error);
+    }
   }, [order?.id, userToken]);
+
+  useEffect(() => {
+    fetchOrderDetails();
+    
+    // Periodically refresh order details while on this screen
+    const interval = setInterval(fetchOrderDetails, 10000);
+    return () => clearInterval(interval);
+  }, [fetchOrderDetails]);
 
   // Parse Coordinates
   const storeLat = parseCoordinate(orderData?.store_lat);
@@ -315,8 +319,9 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             onPress: () => {
               setLocalOpted(true);
               setLocalStatus('assigned');
-              setDirectionsOrigin(currentLocation); 
+              setDirectionsOrigin(currentLocation);
               lastDirectionsUpdate.current = Date.now();
+              fetchOrderDetails();
               onRefresh();
               onBack();
             },
@@ -357,8 +362,11 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             onPress: () => {
               setLocalStatus('out_for_delivery');
               setLocalGivenToDelivery(true);
-              setDirectionsOrigin(currentLocation); 
+              if (currentLocation) {
+                setDirectionsOrigin(currentLocation);
+              }
               lastDirectionsUpdate.current = Date.now();
+              fetchOrderDetails();
               onRefresh();
             },
           },
@@ -398,6 +406,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             onPress: () => {
               setLocalStatus('delivered');
               setLocalCompleted(true);
+              fetchOrderDetails();
               onRefresh();
               onBack();
             },
@@ -490,22 +499,20 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               />
             )}
 
-            {directionsOrigin && (
-              ((localStatus === 'out_for_delivery' || localGivenToDelivery) && userLat !== null && userLng !== null) ||
-              (!(localStatus === 'out_for_delivery' || localGivenToDelivery) && storeLat !== null && storeLng !== null)
-            ) && (
+            {directionsOrigin && userLat !== null && userLng !== null && (
               <MapViewDirections
+                key={`${localStatus}-${localGivenToDelivery}`}
                 origin={directionsOrigin}
-                destination={{ latitude: userLat!, longitude: userLng! }}
+                destination={{ latitude: userLat, longitude: userLng }}
                 waypoints={
                    (!localGivenToDelivery && storeLat !== null && storeLng !== null) 
                     ? [{ latitude: storeLat, longitude: storeLng }] 
-                    : undefined
+                    : []
                 }
                 apikey={GOOGLE_MAPS_APIKEY}
                 strokeWidth={4}
                 strokeColor={Colors.primary}
-                optimizeWaypoints={true}
+                optimizeWaypoints={!localGivenToDelivery}
                 onReady={result => {
                   console.log(`[Directions] Dist: ${result.distance}km, Dur: ${result.duration}min`);
                 }}
