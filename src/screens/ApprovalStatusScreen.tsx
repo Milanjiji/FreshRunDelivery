@@ -28,12 +28,21 @@ const POLL_INTERVAL_MS = 10000; // 10 seconds
 
 interface ApprovalStatusScreenProps {
   status: 'pending' | 'approved' | 'rejected';
+  userData: any;
   onApproved: () => void;
   onLogout: () => void;
+  onCompleteProfile: () => void;
 }
 
-const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: initialStatus, onApproved, onLogout }) => {
+const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ 
+  status: initialStatus, 
+  userData,
+  onApproved, 
+  onLogout,
+  onCompleteProfile 
+}) => {
   const [currentStatus, setCurrentStatus] = useState<'pending' | 'approved' | 'rejected'>(initialStatus);
+  const [isProfileComplete, setIsProfileComplete] = useState(userData?.isProfileComplete);
   const [isChecking, setIsChecking] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -55,12 +64,14 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: ini
       const data = await response.json();
       if (data.success && data.user) {
         const newStatus = data.user.approvalStatus;
+        const newProfileComplete = data.user.isProfileComplete;
         setLastChecked(new Date());
 
-        if (newStatus !== currentStatus) {
+        if (newStatus !== currentStatus || newProfileComplete !== isProfileComplete) {
           setCurrentStatus(newStatus);
+          setIsProfileComplete(newProfileComplete);
           const existingData = storage.getObject<any>('userData') || {};
-          storage.setItem('userData', { ...existingData, approvalStatus: newStatus });
+          storage.setItem('userData', { ...existingData, approvalStatus: newStatus, isProfileComplete: newProfileComplete });
 
           if (newStatus === 'approved') {
             if (intervalRef.current) clearInterval(intervalRef.current);
@@ -73,7 +84,7 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: ini
     } finally {
       setIsChecking(false);
     }
-  }, [currentStatus, onApproved]);
+  }, [currentStatus, isProfileComplete, onApproved]);
 
   useEffect(() => {
     checkApprovalStatus();
@@ -86,14 +97,17 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: ini
   const stages = [
     {
       title: 'Registration Submitted',
-      description: 'Your documents have been received.',
-      completed: true,
+      description: isProfileComplete 
+        ? 'Your documents have been received.' 
+        : 'Please complete your registration.',
+      completed: isProfileComplete,
+      active: !isProfileComplete,
     },
     {
       title: 'Admin Verification',
       description: 'Our team is reviewing your Aadhar details.',
       completed: currentStatus === 'approved',
-      active: currentStatus === 'pending',
+      active: isProfileComplete && currentStatus === 'pending',
     },
     {
       title: 'Final Approval',
@@ -136,6 +150,24 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ status: ini
             </Text>
           </View>
         </View>
+
+        {!isProfileComplete && currentStatus === 'pending' && (
+          <View style={styles.incompleteBox}>
+            <View style={styles.incompleteHeader}>
+              <AlertCircle size={20} color={Colors.primary} />
+              <Text style={styles.incompleteTitle}>Action Required</Text>
+            </View>
+            <Text style={styles.incompleteDescription}>
+              Your registration is incomplete. Please provide your details and documents to proceed with the approval process.
+            </Text>
+            <TouchableOpacity 
+              style={styles.completeBtn} 
+              onPress={onCompleteProfile}
+            >
+              <Text style={styles.completeBtnText}>Complete Registration</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.stagesContainer}>
           {stages.map((stage, index) => (
@@ -319,6 +351,44 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.regular,
     color: Colors.textSecondary,
     lineHeight: 18,
+  },
+  incompleteBox: {
+    backgroundColor: '#F0F7FF',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 30,
+    borderWidth: 1,
+    borderColor: '#D0E7FF',
+  },
+  incompleteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  incompleteTitle: {
+    fontSize: 16,
+    fontFamily: Fonts.bold,
+    color: Colors.primary,
+    marginLeft: 8,
+  },
+  incompleteDescription: {
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  completeBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  completeBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontFamily: Fonts.bold,
   },
   rejectedContainer: {
     padding: 20,

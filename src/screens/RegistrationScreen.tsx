@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Camera, ChevronLeft, Trash2 } from 'lucide-react-native';
 import axios from 'axios';
+import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { storage } from '../utils/storage';
 import { PageTitle, PageSubtitle } from '../components/Typography';
@@ -34,16 +35,22 @@ const UPLOAD_PRESET = "freshrun_preset";
 interface RegistrationScreenProps {
   onBack: () => void;
   onRegisterSuccess: (token: string, user: any) => void;
+  isUpdate?: boolean;
 }
 
-const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegisterSuccess }) => {
+const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegisterSuccess, isUpdate = false }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const currentUser = auth().currentUser;
+  const [phoneNumber, setPhoneNumber] = useState(currentUser?.phoneNumber?.replace('+91', '') || '');
   const [aadharNumber, setAadharNumber] = useState('');
   const [aadharImage, setAadharImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // OTP related state
+  const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
+  const [otpCode, setOtpCode] = useState('');
 
   const handleSelectImage = async () => {
     const result = await launchImageLibrary({
@@ -105,30 +112,84 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       return;
     }
 
-    const formattedPhone = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
-    const payload = {
-      fullName,
-      email,
-      phone: formattedPhone,
-      role: 'delivery',
-      aadharNumber,
-      aadharImage,
-    };
+    const formattedPhone = `+91${phoneNumber.replace(/\D/g, '')}`;
+    setLoading(true);
+    try {
+      if (isUpdate && currentUser) {
+        console.log('Skipping OTP as user is already authenticated (isUpdate mode)');
+        const idToken = await currentUser.getIdToken();
+        const payload = {
+          idToken,
+          fullName,
+          email,
+          aadharNumber,
+          aadharImage,
+        };
+
+        const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
+        if (response.data.success) {
+          const { user } = response.data;
+          storage.setItem('userToken', idToken);
+          storage.setItem('userData', user);
+          onRegisterSuccess(idToken, user);
+        } else {
+          throw new Error(response.data.error || 'Update failed');
+        }
+        return;
+      }
+
+      console.log('Sending OTP for registration:', formattedPhone);
+      const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
+      setConfirm(confirmation);
+      Alert.alert('Verification Sent', 'Please enter the 6-digit code sent to your phone.');
+    } catch (error: any) {
+      console.error('Registration/Update Error:', error);
+      const message = error?.response?.data?.error || error.message || 'Action failed';
+      Alert.alert('Error', message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmRegistrationCode = async () => {
+    if (!otpCode || otpCode.length < 6) {
+      Alert.alert('Error', 'Please enter the 6-digit code');
+      return;
+    }
 
     setLoading(true);
     try {
-      const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
-      if (response.data.success) {
-        const { token, user } = response.data;
-        storage.setItem('userToken', token);
-        storage.setItem('userData', user);
-        onRegisterSuccess(token, user);
-      } else {
-        throw new Error(response.data.error || 'Registration failed');
+      if (!confirm) return;
+      
+      console.log('Verifying registration code...');
+      const credential = await confirm.confirm(otpCode);
+      
+      if (credential?.user) {
+        const idToken = await credential.user.getIdToken();
+        console.log('Firebase verified. Submitting registration to backend...');
+
+        const payload = {
+          idToken,
+          fullName,
+          email,
+          aadharNumber,
+          aadharImage,
+        };
+
+        const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
+        if (response.data.success) {
+          const { user } = response.data;
+          storage.setItem('userToken', idToken);
+          storage.setItem('userData', user);
+          onRegisterSuccess(idToken, user);
+        } else {
+          throw new Error(response.data.error || 'Registration failed');
+        }
       }
     } catch (error: any) {
-      const message = error?.response?.data?.error || error.message || 'Registration failed';
-      Alert.alert('Registration Failed', message);
+      console.error('Registration Verification Error:', error);
+      const message = error?.response?.data?.error || error.message || 'Verification failed';
+      Alert.alert('Verification Failed', message);
     } finally {
       setLoading(false);
     }
@@ -148,101 +209,141 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <PageTitle>Join the Team</PageTitle>
-            <PageSubtitle>Become a FreshRun delivery partner today.</PageSubtitle>
+            <PageTitle>{isUpdate ? 'Complete Profile' : 'Join the Team'}</PageTitle>
+            <PageSubtitle>
+              {isUpdate 
+                ? 'Provide your details to complete registration.' 
+                : 'Become a FreshRun delivery partner today.'}
+            </PageSubtitle>
           </View>
 
-          <View style={styles.inputSection}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Full Name</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter your full name"
-                value={fullName}
-                onChangeText={setFullName}
-                placeholderTextColor={Colors.textLight}
-              />
-            </View>
+          {!confirm ? (
+            <>
+              <View style={styles.inputSection}>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Full Name</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter your full name"
+                    value={fullName}
+                    onChangeText={setFullName}
+                    placeholderTextColor={Colors.textLight}
+                  />
+                </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Email Address</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter your email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholderTextColor={Colors.textLight}
-              />
-            </View>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Email Address</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Enter your email"
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    placeholderTextColor={Colors.textLight}
+                  />
+                </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={styles.phoneInputWrapper}>
-                <Text style={styles.countryCode}>+91</Text>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Phone Number</Text>
+                  <View style={styles.phoneInputWrapper}>
+                    <Text style={styles.countryCode}>+91</Text>
+                    <TextInput
+                      style={[styles.phoneInput, isUpdate && { color: Colors.textLight }]}
+                      placeholder="Enter phone number"
+                      value={phoneNumber}
+                      onChangeText={setPhoneNumber}
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                      placeholderTextColor={Colors.textLight}
+                      editable={!isUpdate}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Aadhar Number</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="12-digit Aadhar Number"
+                    value={aadharNumber}
+                    onChangeText={setAadharNumber}
+                    keyboardType="number-pad"
+                    maxLength={12}
+                    placeholderTextColor={Colors.textLight}
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.label}>Aadhar Card Photo</Text>
+                  {aadharImage ? (
+                    <View style={styles.imagePreviewContainer}>
+                      <Image source={{ uri: aadharImage }} style={styles.imagePreview} />
+                      <TouchableOpacity 
+                        style={styles.removeImageBtn}
+                        onPress={() => setAadharImage(null)}
+                      >
+                        <Trash2 size={16} color="#fff" />
+                        <Text style={styles.removeImageText}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity 
+                      style={styles.uploadButton} 
+                      onPress={handleSelectImage}
+                      disabled={uploading}
+                    >
+                      {uploading ? (
+                        <ActivityIndicator color={Colors.primary} />
+                      ) : (
+                        <>
+                          <Camera size={28} color={Colors.textLight} style={{ marginBottom: 8 }} />
+                          <Text style={styles.uploadText}>Upload Aadhar Image</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              <PrimaryButton 
+                title={loading ? (isUpdate ? "Updating..." : "Sending OTP...") : (isUpdate ? "Complete Registration" : "Register & Verify")}
+                onPress={handleRegister}
+                loading={loading}
+              />
+            </>
+          ) : (
+            <View style={styles.otpContainer}>
+              <Text style={styles.otpLabel}>Verify your Phone Number</Text>
+              <Text style={styles.otpSubtitle}>Enter the 6-digit code sent to +91 {phoneNumber}</Text>
+              
+              <View style={styles.otpInputWrapper}>
                 <TextInput
-                  style={styles.phoneInput}
-                  placeholder="Enter phone number"
-                  value={phoneNumber}
-                  onChangeText={setPhoneNumber}
-                  keyboardType="phone-pad"
-                  maxLength={10}
+                  style={styles.otpInput}
+                  placeholder="000000"
+                  value={otpCode}
+                  onChangeText={setOtpCode}
+                  keyboardType="number-pad"
+                  maxLength={6}
                   placeholderTextColor={Colors.textLight}
                 />
               </View>
-            </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Aadhar Number</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="12-digit Aadhar Number"
-                value={aadharNumber}
-                onChangeText={setAadharNumber}
-                keyboardType="number-pad"
-                maxLength={12}
-                placeholderTextColor={Colors.textLight}
+              <PrimaryButton 
+                title={loading ? "Verifying..." : "Complete Registration"}
+                onPress={confirmRegistrationCode}
+                loading={loading}
               />
-            </View>
 
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Aadhar Card Photo</Text>
-              {aadharImage ? (
-                <View style={styles.imagePreviewContainer}>
-                  <Image source={{ uri: aadharImage }} style={styles.imagePreview} />
-                  <TouchableOpacity 
-                    style={styles.removeImageBtn}
-                    onPress={() => setAadharImage(null)}
-                  >
-                    <Trash2 size={16} color="#fff" />
-                    <Text style={styles.removeImageText}>Remove</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.uploadButton} 
-                  onPress={handleSelectImage}
-                  disabled={uploading}
-                >
-                  {uploading ? (
-                    <ActivityIndicator color={Colors.primary} />
-                  ) : (
-                    <>
-                      <Camera size={28} color={Colors.textLight} style={{ marginBottom: 8 }} />
-                      <Text style={styles.uploadText}>Upload Aadhar Image</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity 
+                style={styles.resendBtn} 
+                onPress={() => setConfirm(null)}
+                disabled={loading}
+              >
+                <Text style={styles.resendText}>Edit Phone Number?</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-
-          <PrimaryButton 
-            title={loading ? "Registering..." : "Become a Partner"}
-            onPress={handleRegister}
-            loading={loading}
-          />
+          )}
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>By joining, you agree to our </Text>
@@ -398,6 +499,50 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.bold,
     color: Colors.primary,
     textDecorationLine: 'underline',
+  },
+  otpContainer: {
+    marginBottom: 30,
+  },
+  otpLabel: {
+    fontSize: 20,
+    fontFamily: Fonts.bold,
+    color: Colors.text,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  otpSubtitle: {
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    color: Colors.textSecondary,
+    marginBottom: 30,
+    textAlign: 'center',
+  },
+  otpInputWrapper: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 15,
+    height: 60,
+    marginBottom: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
+  otpInput: {
+    fontSize: 24,
+    fontFamily: Fonts.bold,
+    color: Colors.text,
+    letterSpacing: 8,
+    textAlign: 'center',
+    width: '100%',
+  },
+  resendBtn: {
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  resendText: {
+    fontSize: 14,
+    fontFamily: Fonts.medium,
+    color: Colors.primary,
   },
 });
 

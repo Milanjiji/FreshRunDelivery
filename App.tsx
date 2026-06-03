@@ -10,7 +10,6 @@ import LoginScreen from './src/screens/LoginScreen';
 import RegistrationScreen from './src/screens/RegistrationScreen';
 import ApprovalStatusScreen from './src/screens/ApprovalStatusScreen';
 import HomeScreen from './src/screens/HomeScreen';
-import SplashScreen from './src/screens/SplashScreen';
 import { 
   requestNotificationPermission, 
   createNotificationChannels, 
@@ -23,11 +22,46 @@ import { API_BASE_URL } from './src/config/api';
 
 const BACKEND_URL = API_BASE_URL;
 
+import auth from '@react-native-firebase/auth';
+
 function App() {
-  const [currentScreen, setCurrentScreen] = useState<'login' | 'register'>('login');
+  const [currentScreen, setCurrentScreen] = useState<'login' | 'register' | 'complete_profile'>('login');
   const [userToken, setUserToken] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Firebase Auth & Token Refresh Logic
+  useEffect(() => {
+    const unsubscribe = auth().onIdTokenChanged(async (user) => {
+      console.log('[Auth] ID Token changed or user state changed');
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          console.log('[Auth] New ID Token acquired');
+          
+          setUserToken(idToken);
+          storage.setItem('userToken', idToken);
+          
+          // Load local user data if it exists
+          const currentData = storage.getObject<any>('userData');
+          if (currentData) {
+            setUserData(currentData);
+          }
+        } catch (e) {
+          console.error('[Auth] Error getting ID token:', e);
+        }
+      } else {
+        console.log('[Auth] User is signed out');
+        setUserToken(null);
+        setUserData(null);
+        storage.removeItem('userToken');
+        storage.removeItem('userData');
+        setCurrentScreen('login');
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   // FCM Setup
   useEffect(() => {
@@ -68,40 +102,10 @@ function App() {
 
   useEffect(() => {
     const initApp = async () => {
-      console.log('[App] Initializing session...');
+      console.log('[App] Initializing app...');
       try {
-        const token = storage.getString('userToken');
-        const data = storage.getObject<any>('userData');
-
-        if (token && data) {
-          console.log('[App] Found valid cached session. Logging in immediately...');
-          setUserToken(token);
-          setUserData(data);
-
-          try {
-            console.log('[App] Refreshing user data in background...');
-            const response = await fetch(`${BACKEND_URL}/user/profile`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            
-            if (response.ok) {
-              const result = await response.json();
-              if (result.success && result.user) {
-                const freshUser = { ...data, ...result.user };
-                storage.setItem('userData', freshUser);
-                setUserData(freshUser);
-                console.log('[App] Background refresh complete. Status:', result.user.approvalStatus);
-              }
-            } else if (response.status === 401 || response.status === 403) {
-              console.log('[App] Session expired on server. Logging out.');
-              handleLogout();
-            }
-          } catch (fetchErr) {
-            console.log('[App] Background refresh failed (likely offline). Keeping cached session.', fetchErr);
-          }
-        } else {
-          console.log('[App] No cached session found.');
-        }
+        // NOTE: Manual session check removed.
+        // Handled by onIdTokenChanged listener in useEffect above.
       } catch (e) {
         console.error('[App] Critical failure during init:', e);
       } finally {
@@ -125,6 +129,7 @@ function App() {
     setUserData(user);
     storage.setItem('userToken', token);
     storage.setItem('userData', user);
+    setCurrentScreen('login');
   };
 
   const handleApproved = () => {
@@ -137,6 +142,7 @@ function App() {
   };
 
   const handleLogout = () => {
+    auth().signOut();
     storage.removeItem('userToken');
     storage.removeItem('userData');
     setUserToken(null);
@@ -144,11 +150,17 @@ function App() {
     setCurrentScreen('login');
   };
 
-  if (loading) {
-    return <SplashScreen />;
-  }
-
   const renderLoggedInContent = () => {
+    if (currentScreen === 'complete_profile') {
+      return (
+        <RegistrationScreen
+          onBack={() => setCurrentScreen('login')}
+          onRegisterSuccess={handleLoginSuccess}
+          isUpdate={true}
+        />
+      );
+    }
+
     const isPending = userData?.role === 'delivery' &&
       (userData?.approvalStatus === 'pending' || userData?.approvalStatus === 'rejected');
 
@@ -156,8 +168,10 @@ function App() {
       return (
         <ApprovalStatusScreen
           status={userData.approvalStatus}
+          userData={userData}
           onApproved={handleApproved}
           onLogout={handleLogout}
+          onCompleteProfile={() => setCurrentScreen('complete_profile')}
         />
       );
     }

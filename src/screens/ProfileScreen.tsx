@@ -43,13 +43,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
   const [aadharExpanded, setAadharExpanded] = useState(false);
 
   const fullName = userData?.fullName || userData?.full_name || 'Partner';
-  const initials = fullName
-    .split(' ')
-    .map((w: string) => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-
+  
   const phone = userData?.phone
     ? userData.phone.startsWith('+')
       ? userData.phone
@@ -59,17 +53,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
   const approvalStatus = userData?.approvalStatus || 'approved';
 
   const infoRows = [
-    { label: 'Full Name', value: fullName, icon: <User size={18} color={Colors.primary} /> },
-    { label: 'Phone Number', value: phone, icon: <Phone size={18} color={Colors.primary} /> },
-    { label: 'Email Address', value: userData?.email || '—', icon: <Mail size={18} color={Colors.primary} /> },
-    { label: 'Aadhar Number', value: userData?.aadharNumber || '—', icon: <CreditCard size={18} color={Colors.primary} /> },
+    { id: '1', label: 'Full Name', value: fullName, icon: <User size={20} color="#333" /> },
+    { id: '2', label: 'Phone Number', value: phone, icon: <Phone size={20} color="#333" /> },
+    { id: '3', label: 'Email Address', value: userData?.email || '—', icon: <Mail size={20} color="#333" /> },
+    { id: '4', label: 'Aadhar Number', value: userData?.aadharNumber || '—', icon: <CreditCard size={20} color="#333" /> },
   ];
 
   const quickLinks = [
-    { id: 'q1', icon: <Package size={22} color={Colors.textSecondary} />, label: 'My\nDeliveries' },
-    { id: 'q2', icon: <Star size={22} color={Colors.textSecondary} />, label: 'Ratings' },
-    { id: 'q3', icon: <Wallet size={22} color={Colors.textSecondary} />, label: 'Earnings' },
-    { id: 'q4', icon: <LifeBuoy size={22} color={Colors.textSecondary} />, label: 'Support' },
+    { id: 'q1', icon: <Package size={24} color="#333" />, label: 'My\nDeliveries' },
+    { id: 'q2', icon: <Star size={24} color="#333" />, label: 'Ratings' },
+    { id: 'q3', icon: <Wallet size={24} color="#333" />, label: 'Earnings' },
+    { id: 'q4', icon: <LifeBuoy size={24} color="#333" />, label: 'Support' },
   ];
 
   return (
@@ -79,12 +73,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
       {/* ── HEADER ──────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <ChevronLeft size={24} color={Colors.text} strokeWidth={2.5} />
+          <ChevronLeft size={24} color="#333" strokeWidth={2.5} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Profile</Text>
-        <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)}>
-          <MoreHorizontal size={22} color={Colors.text} strokeWidth={2.5} />
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.helpButton}>
+            <Text style={styles.helpText}>Help</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)}>
+            <MoreHorizontal size={22} color="#333" strokeWidth={2.5} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── DROPDOWN MENU ──────────────────────────────────── */}
@@ -122,15 +120,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* ── HERO AVATAR SECTION ─────────────────────────── */}
+        {/* ── HERO SECTION ─────────────────────────── */}
         <View style={styles.heroSection}>
-          <View style={styles.avatarRing}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-          </View>
           <Text style={styles.heroName}>{fullName}</Text>
-          <Text style={styles.heroPhone}>{phone}</Text>
+          <Text style={styles.heroDetailText}>{phone}</Text>
+          <Text style={styles.heroDetailText}>{userData?.email || 'email@example.com'}</Text>
 
           {/* Approval Status Badge */}
           <View style={[
@@ -234,10 +228,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
 
         <View style={styles.menuCard}>
           {[
-            { id: 'h1', icon: <History size={20} color={Colors.textSecondary} />, label: 'Delivery History' },
-            { id: 'h2', icon: <BarChart3 size={20} color={Colors.textSecondary} />, label: 'Earnings Report' },
-            { id: 'h3', icon: <Bell size={20} color={Colors.textSecondary} />, label: 'Notifications' },
-            { id: 'h4', icon: <ShieldCheck size={20} color={Colors.textSecondary} />, label: 'Privacy Policy' },
+            { id: 'h1', icon: <History size={20} color="#333" />, label: 'Delivery History' },
+            { id: 'h2', icon: <BarChart3 size={20} color="#333" />, label: 'Earnings Report' },
+            { id: 'h3', icon: <Bell size={20} color="#333" />, label: 'Notifications' },
+            { id: 'h4', icon: <ShieldCheck size={20} color="#333" />, label: 'Privacy Policy' },
           ].map((item, i, arr) => (
             <TouchableOpacity
               key={item.label}
@@ -245,10 +239,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
               onPress={item.id === 'h4' ? () => Linking.openURL(PRIVACY_POLICY_URL) : undefined}
             >
               <View style={styles.menuItemLeft}>
-                <View style={{ marginRight: 14 }}>{item.icon}</View>
+                <View style={{ marginRight: 15 }}>{item.icon}</View>
                 <Text style={styles.menuItemLabel}>{item.label}</Text>
               </View>
-              <Text style={styles.menuChevron}>›</Text>
+              <ChevronLeft size={18} color="#999" style={{ transform: [{ rotate: '180deg' }] }} />
             </TouchableOpacity>
           ))}
         </View>
@@ -285,82 +279,73 @@ const styles = StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: Colors.background,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    padding: 5,
   },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
+  helpButton: {
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 15,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+  },
+  helpText: {
+    color: Colors.secondary,
+    fontSize: 14,
     fontFamily: Fonts.bold,
-    color: Colors.text,
   },
   menuBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    padding: 5,
   },
 
   scrollContent: { paddingBottom: 40 },
 
   // Hero
   heroSection: {
-    alignItems: 'center',
-    paddingVertical: 28,
-    paddingHorizontal: 20,
+    paddingHorizontal: 25,
+    paddingVertical: 20,
   },
-  avatarRing: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 3,
-    borderColor: Colors.primary,
-    padding: 3,
-    marginBottom: 14,
+  heroName: {
+    fontSize: 28,
+    fontFamily: Fonts.black,
+    fontWeight: '900',
+    color: '#1a1a1a',
+    marginBottom: 5,
   },
-  avatar: {
-    flex: 1,
-    borderRadius: 45,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+  heroDetailText: {
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    color: '#666',
+    marginTop: 2,
   },
-  avatarText: { fontSize: 30, fontFamily: Fonts.bold, color: Colors.white },
-  heroName: { fontSize: 26, fontFamily: Fonts.black, color: Colors.text, marginBottom: 4 },
-  heroPhone: { fontSize: 14, fontFamily: Fonts.regular, color: Colors.textSecondary, marginBottom: 12 },
 
   statusBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: 20,
+    marginTop: 12,
   },
   statusApproved: { backgroundColor: '#e8f5e9' },
   statusPending: { backgroundColor: '#FFF8E1' },
   statusRejected: { backgroundColor: '#FFEBEE' },
-  statusBadgeText: { fontSize: 13, fontFamily: Fonts.semiBold },
+  statusBadgeText: { fontSize: 12, fontFamily: Fonts.semiBold },
   statusApprovedText: { color: Colors.primaryDark },
   statusPendingText: { color: '#F57F17' },
   statusRejectedText: { color: '#C62828' },
@@ -368,37 +353,30 @@ const styles = StyleSheet.create({
   // Quick links
   quickLinksRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: 15,
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   quickLinkCard: {
     backgroundColor: Colors.surface,
     width: '23%',
-    paddingVertical: 14,
+    paddingVertical: 15,
+    paddingHorizontal: 8,
     borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   quickLinkIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   quickLinkLabel: {
-    fontSize: 10,
-    fontFamily: Fonts.semiBold,
-    color: Colors.textSecondary,
+    fontSize: 11,
+    fontFamily: Fonts.bold,
     textAlign: 'center',
-    lineHeight: 13,
+    color: '#444',
+    lineHeight: 14,
   },
 
   // Section label
@@ -408,13 +386,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     marginBottom: 10,
-    marginTop: 4,
+    marginTop: 10,
   },
   sectionLabelText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: Fonts.bold,
-    color: Colors.textLight,
-    letterSpacing: 1,
+    color: '#1a1a1a',
+    letterSpacing: 0.5,
   },
   expandToggle: {
     flexDirection: 'row',
@@ -429,51 +407,35 @@ const styles = StyleSheet.create({
   // Info card
   infoCard: {
     backgroundColor: Colors.surface,
-    marginHorizontal: 16,
+    marginHorizontal: 15,
     borderRadius: 20,
-    paddingHorizontal: 18,
-    marginBottom: 24,
+    paddingHorizontal: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: '#eee',
+    marginBottom: 20,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 18,
   },
   infoIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
+    marginRight: 15,
   },
   infoTextBlock: { flex: 1 },
   infoLabel: { fontSize: 11, fontFamily: Fonts.regular, color: Colors.textLight, marginBottom: 2 },
-  infoValue: { fontSize: 15, fontFamily: Fonts.semiBold, color: Colors.text },
-  infoDivider: { height: 1, backgroundColor: Colors.divider, marginLeft: 52 },
+  infoValue: { fontSize: 15, fontFamily: Fonts.semiBold, color: '#333' },
+  infoDivider: { height: 1, backgroundColor: '#f0f0f0' },
 
   // Aadhar image
   aadharImageCard: {
     backgroundColor: Colors.surface,
-    marginHorizontal: 16,
+    marginHorizontal: 15,
     borderRadius: 20,
     overflow: 'hidden',
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: '#eee',
   },
   aadharImage: { width: '100%', height: 200 },
   openFullBtn: {
@@ -489,30 +451,24 @@ const styles = StyleSheet.create({
   // Menu card
   menuCard: {
     backgroundColor: Colors.surface,
-    marginHorizontal: 16,
+    marginHorizontal: 15,
     borderRadius: 20,
-    paddingHorizontal: 18,
-    marginBottom: 24,
+    paddingHorizontal: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: '#eee',
+    marginBottom: 20,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
+    paddingVertical: 18,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
+    borderBottomColor: '#f0f0f0',
   },
   menuItemLast: { borderBottomWidth: 0 },
   menuItemLeft: { flexDirection: 'row', alignItems: 'center' },
-  menuItemLabel: { fontSize: 15, fontFamily: Fonts.medium, color: Colors.text },
-  menuChevron: { fontSize: 22, color: Colors.textLight },
+  menuItemLabel: { fontSize: 15, fontFamily: Fonts.medium, color: '#333' },
 
   // Logout
   logoutBtn: {
@@ -520,17 +476,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.surface,
-    marginHorizontal: 16,
-    paddingVertical: 16,
+    marginHorizontal: 15,
+    paddingVertical: 15,
     borderRadius: 20,
-    marginBottom: 16,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: Colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: '#eee',
   },
   logoutText: { fontSize: 15, fontFamily: Fonts.bold, color: Colors.error },
 
@@ -544,26 +495,26 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.15)',
+    backgroundColor: 'rgba(0,0,0,0.1)',
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: 60,
-    paddingRight: 16,
+    paddingTop: 50,
+    paddingRight: 15,
   },
   menuDropdown: {
-    backgroundColor: '#2D2D2D',
-    width: 150,
-    borderRadius: 14,
+    backgroundColor: '#2d2d2d',
+    width: 140,
+    borderRadius: 12,
     paddingVertical: 4,
-    elevation: 8,
+    elevation: 5,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  menuOption: { paddingVertical: 12, paddingHorizontal: 16 },
-  menuOptionText: { fontSize: 14, fontFamily: Fonts.medium, color: Colors.white },
-  menuDivider: { height: 1, backgroundColor: '#444', marginHorizontal: 10 },
+  menuOption: { paddingVertical: 10, paddingHorizontal: 15 },
+  menuOptionText: { fontSize: 14, fontFamily: Fonts.medium, color: '#fff' },
+  menuDivider: { height: 1, backgroundColor: '#444', marginHorizontal: 8 },
 });
 
 export default ProfileScreen;
