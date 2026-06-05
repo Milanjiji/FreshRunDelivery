@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import {
   Platform,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { ChevronLeft } from 'lucide-react-native';
 import { Fonts } from '../theme/typography';

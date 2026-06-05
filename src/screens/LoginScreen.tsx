@@ -8,11 +8,11 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Image,
   StatusBar,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import axios from 'axios';
 import { storage } from '../utils/storage';
@@ -74,8 +74,54 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
         Alert.alert('Error', 'Please enter a valid 10-digit phone number');
         return;
       }
-      const formattedNumber = `+91${sanitizedPhone}`;
+
       setLoading(true);
+
+      // --- Pre-OTP Check (Case 1 & 2) ---
+      try {
+        const checkRes = await axios.get(`${BACKEND_URL}/auth/check-partner/${sanitizedPhone}`, {
+          timeout: BACKEND_REQUEST_TIMEOUT_MS
+        });
+
+        if (checkRes.data.success) {
+          if (!checkRes.data.exists) {
+            setLoading(false);
+            Alert.alert(
+              'Not Registered',
+              'You are not registered as a partner. Please register first.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Register Now', onPress: onNavigateToRegister }
+              ]
+            );
+            return;
+          }
+
+          if (checkRes.data.approvalStatus === 'pending') {
+            setLoading(false);
+            Alert.alert(
+              'Waiting for Approval',
+              'Your account is currently waiting for admin approval. Please check back later.'
+            );
+            return;
+          }
+
+          if (checkRes.data.approvalStatus === 'rejected') {
+            setLoading(false);
+            Alert.alert(
+              'Account Rejected',
+              'Your registration was unfortunately rejected. Please contact support for more details.'
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Pre-OTP check failed, proceeding with fallback:', err);
+        // We continue if the check fails due to network, but it's safer to block.
+        // For now, let's just log and proceed.
+      }
+
+      const formattedNumber = `+91${sanitizedPhone}`;
       const confirmation = await withTimeout(
         auth().signInWithPhoneNumber(formattedNumber),
         OTP_REQUEST_TIMEOUT_MS,

@@ -8,13 +8,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   Image,
   ActivityIndicator,
   StatusBar,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, ChevronLeft, Trash2 } from 'lucide-react-native';
 import axios from 'axios';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
@@ -112,9 +112,31 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       return;
     }
 
-    const formattedPhone = `+91${phoneNumber.replace(/\D/g, '')}`;
+    const sanitizedPhone = phoneNumber.replace(/\D/g, '');
+    const formattedPhone = `+91${sanitizedPhone}`;
     setLoading(true);
     try {
+      // --- Pre-OTP Check (Case 3) ---
+      if (!isUpdate) {
+        try {
+          const checkRes = await axios.get(`${BACKEND_URL}/auth/check-partner/${sanitizedPhone}`);
+          if (checkRes.data.success && checkRes.data.exists) {
+            setLoading(false);
+            Alert.alert(
+              'Account Exists',
+              'You already have a delivery partner account with this phone number. Please log in instead.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Go to Login', onPress: onBack }
+              ]
+            );
+            return;
+          }
+        } catch (err) {
+          console.warn('Pre-registration check failed:', err);
+        }
+      }
+
       if (isUpdate && currentUser) {
         console.log('Skipping OTP as user is already authenticated (isUpdate mode)');
         const idToken = await currentUser.getIdToken();

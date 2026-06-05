@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  SafeAreaView,
   StyleSheet,
   Alert,
+  View,
+  Text,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import messaging from '@react-native-firebase/messaging';
+import io from 'socket.io-client';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { storage } from './src/utils/storage';
+import LoadingTransition from './src/components/LoadingTransition';
 import LoginScreen from './src/screens/LoginScreen';
 import RegistrationScreen from './src/screens/RegistrationScreen';
 import ApprovalStatusScreen from './src/screens/ApprovalStatusScreen';
@@ -29,6 +34,38 @@ function App() {
   const [userToken, setUserToken] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [appSettings, setAppSettings] = useState<any>(null);
+  const socketRef = useRef<any>(null);
+
+  // Fetch Global App Settings
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/settings`);
+        const data = await res.json();
+        if (data.success) setAppSettings(data.data);
+      } catch (e) {
+        console.warn('Failed to fetch settings in App.tsx');
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  // Global Socket for settings updates
+  useEffect(() => {
+    socketRef.current = io(API_BASE_URL);
+
+    socketRef.current.on('settings_updated', (newSettings: any) => {
+      console.log('[Socket] Global settings updated');
+      setAppSettings(newSettings);
+    });
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, []);
 
   // Firebase Auth & Token Refresh Logic
   useEffect(() => {
@@ -183,24 +220,41 @@ function App() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {!userToken ? (
-        currentScreen === 'login' ? (
-          <LoginScreen
-            onLoginSuccess={handleLoginSuccess}
-            role="delivery"
-            onNavigateToRegister={() => setCurrentScreen('register')}
-          />
+    <SafeAreaProvider>
+      <View style={styles.container}>
+        {loading ? (
+          <LoadingTransition />
         ) : (
-          <RegistrationScreen
-            onBack={() => setCurrentScreen('login')}
-            onRegisterSuccess={handleLoginSuccess}
-          />
-        )
-      ) : (
-        renderLoggedInContent()
-      )}
-    </SafeAreaView>
+          <>
+            {appSettings?.is_rainy_condition && (
+              <SafeAreaView edges={['top']} style={styles.rainyBar}>
+                <Text style={styles.rainyText}>
+                    Rainy weather: <Text style={{ color: '#4A90E2' }}>Extra ₹{appSettings.rainy_condition_fee}</Text> surge is active
+                </Text>
+              </SafeAreaView>
+            )}
+            <SafeAreaView style={styles.container} edges={[]}>
+              {!userToken ? (
+                currentScreen === 'login' ? (
+                  <LoginScreen
+                    onLoginSuccess={handleLoginSuccess}
+                    role="delivery"
+                    onNavigateToRegister={() => setCurrentScreen('register')}
+                  />
+                ) : (
+                  <RegistrationScreen
+                    onBack={() => setCurrentScreen('login')}
+                    onRegisterSuccess={handleLoginSuccess}
+                  />
+                )
+              ) : (
+                renderLoggedInContent()
+              )}
+            </SafeAreaView>
+          </>
+        )}
+      </View>
+    </SafeAreaProvider>
   );
 }
 
@@ -208,6 +262,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  rainyBar: {
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  rainyText: {
+    color: '#333',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   homeContainer: {
     flex: 1,

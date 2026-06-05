@@ -6,11 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  SafeAreaView,
   StatusBar,
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   Bell, 
   Search, 
@@ -22,14 +22,17 @@ import {
   TrendingUp,
   Map as MapIcon,
   ChevronDown,
-  Wallet
+  Wallet,
+  IndianRupee
 } from 'lucide-react-native';
 import io from 'socket.io-client';
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 import ProfileScreen from './ProfileScreen';
+import MyDeliveriesScreen from './MyDeliveriesScreen';
 import DirectionsScreen from './DirectionsScreen';
 import DebugMapScreen from './DebugMapScreen';
+import InfoScreen, { InfoType } from './InfoScreen';
 
 import { API_BASE_URL } from '../config/api';
 
@@ -48,6 +51,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
   const [activeTab, setActiveTab] = useState<TabType>('pickups');
   const [searchText, setSearchText] = useState('');
   const [showProfile, setShowProfile] = useState(false);
+  const [showMyDeliveries, setShowMyDeliveries] = useState(false);
+  const [showInfo, setShowInfo] = useState<InfoType | null>(null);
   const [showDebugMap, setShowDebugMap] = useState(false);
 
   // Dynamic state loaded from the backend APIs
@@ -191,12 +196,35 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
     return <DebugMapScreen onBack={() => setShowDebugMap(false)} />;
   }
 
+  if (showMyDeliveries) {
+    return (
+      <MyDeliveriesScreen
+        userToken={userToken || ''}
+        onBack={() => setShowMyDeliveries(false)}
+      />
+    );
+  }
+
   if (showProfile) {
     return (
       <ProfileScreen
         userData={userProfile}
         onBack={() => setShowProfile(false)}
         onLogout={onLogout}
+        onInfoPress={(type) => setShowInfo(type)}
+        onMyDeliveriesPress={() => {
+          setShowProfile(false);
+          setShowMyDeliveries(true);
+        }}
+      />
+    );
+  }
+
+  if (showInfo) {
+    return (
+      <InfoScreen 
+        type={showInfo}
+        onBack={() => setShowInfo(null)}
       />
     );
   }
@@ -353,8 +381,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
             const orderTime = item.created_at
               ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               : 'N/A';
-            const boxesCount = item.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1;
-            const weightVal = (boxesCount * 0.8).toFixed(1) + 'kg';
+            
+            const fee = parseFloat(item.delivery_fee) || 0;
+            const rainySurge = parseFloat(item.rainy_surge_fee) || 0;
+            const lateNight = parseFloat(item.late_night_fee) || 0;
+            const tip = parseFloat(item.delivery_tip) || 0;
+            const totalEarning = fee + rainySurge + lateNight + tip;
 
             return (
               <TouchableOpacity 
@@ -398,14 +430,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
                     </View>
                   </View>
 
-                  <View style={styles.metaInfo}>
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>Boxes</Text>
-                      <Text style={styles.metaValue}>{boxesCount}</Text>
+                  <View style={styles.earningContainer}>
+                    <Text style={styles.label}>Potential Earning</Text>
+                    <View style={styles.earningRow}>
+                       <IndianRupee size={16} color={Colors.primary} strokeWidth={3} />
+                       <Text style={styles.earningValueText}>{totalEarning.toFixed(0)}</Text>
                     </View>
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>Wt</Text>
-                      <Text style={styles.metaValue}>{weightVal}</Text>
+                    <View style={styles.breakdownList}>
+                       <Text style={styles.breakdownItem}>Fee: ₹{fee.toFixed(0)}</Text>
+                       {rainySurge > 0 && <Text style={styles.breakdownItem}>Rainy: ₹{rainySurge.toFixed(0)}</Text>}
+                       {lateNight > 0 && <Text style={styles.breakdownItem}>Late: ₹{lateNight.toFixed(0)}</Text>}
+                       {tip > 0 && <Text style={styles.breakdownItem}>Tip: ₹{tip.toFixed(0)}</Text>}
                     </View>
                   </View>
                 </View>
@@ -744,24 +779,29 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 16,
   },
-  metaInfo: {
+  earningContainer: {
     alignItems: 'flex-end',
     justifyContent: 'center',
     paddingLeft: 10,
   },
-  metaItem: {
-    alignItems: 'flex-end',
+  earningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     marginBottom: 4,
   },
-  metaLabel: {
-    fontSize: 9,
+  earningValueText: {
+    fontSize: 22,
+    fontFamily: Fonts.black,
+    color: Colors.primary,
+  },
+  breakdownList: {
+    alignItems: 'flex-end',
+  },
+  breakdownItem: {
+    fontSize: 10,
     fontFamily: Fonts.bold,
     color: Colors.textLight,
-  },
-  metaValue: {
-    fontSize: 13,
-    fontFamily: Fonts.bold,
-    color: Colors.text,
   },
   actionRow: {
     flexDirection: 'row',

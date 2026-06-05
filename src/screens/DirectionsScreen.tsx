@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   ActivityIndicator,
@@ -16,6 +15,7 @@ import {
   Animated,
   PanResponder,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
@@ -27,11 +27,13 @@ import {
   ShoppingBag,
   Truck,
   CheckCircle,
+  IndianRupee
 } from 'lucide-react-native';
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 
 import { API_BASE_URL } from '../config/api';
+import LocationDisclosureModal from '../components/LocationDisclosureModal';
 
 const BACKEND_URL = API_BASE_URL;
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -102,6 +104,9 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const [localCompleted, setLocalCompleted] = useState<boolean>(order?.is_completed || false);
   const orderData = resolvedOrder || order;
 
+  const [showDisclosure, setShowDisclosure] = useState(false);
+  const [permissionGranted, setPermissionGranted] = useState(false);
+
   // Socket Connection for real-time location sharing
   useEffect(() => {
     socketRef.current = io(BACKEND_URL);
@@ -145,9 +150,18 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     let cancelled = false;
 
     const startTracking = async () => {
-      const hasPermission = await requestLocationPermission();
-      if (!hasPermission) {
-        setTrackingError('Location permission is required for navigation and sharing live updates.');
+      // 1. Check if we already have permission
+      let hasPermission = false;
+      if (Platform.OS === 'android') {
+        hasPermission = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        );
+      } else {
+        hasPermission = true;
+      }
+
+      if (!hasPermission && !permissionGranted) {
+        setShowDisclosure(true);
         return;
       }
 
@@ -204,9 +218,9 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
         },
         {
           enableHighAccuracy: true,
-          distanceFilter: 10,
-          interval: 10000,
-          fastestInterval: 5000,
+          distanceFilter: 20,
+          interval: 15000,
+          fastestInterval: 10000,
         }
       );
     };
@@ -219,7 +233,22 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
         Geolocation.clearWatch(watchId);
       }
     };
-  }, [localCompleted, localStatus, order.id, requestLocationPermission]);
+  }, [localCompleted, localStatus, order.id, permissionGranted]);
+
+  const handleDisclosureAccept = async () => {
+    setShowDisclosure(false);
+    const granted = await requestLocationPermission();
+    if (granted) {
+      setPermissionGranted(true);
+    } else {
+      setTrackingError('Location permission is required for navigation and sharing live updates.');
+    }
+  };
+
+  const handleDisclosureDecline = () => {
+    setShowDisclosure(false);
+    setTrackingError('Location permission is required for navigation and sharing live updates.');
+  };
 
   const fetchOrderDetails = useCallback(async () => {
     if (!order?.id || !userToken) return;
@@ -649,18 +678,24 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             </View>
           </View>
 
-          <View style={styles.metaRow}>
-            <View style={styles.metaBox}>
-              <Text style={styles.metaLabel}>Boxes</Text>
-              <Text style={styles.metaValue}>{boxesCount}</Text>
-            </View>
-            <View style={styles.metaBox}>
-              <Text style={styles.metaLabel}>Approx Wt</Text>
-              <Text style={styles.metaValue}>{weightVal}</Text>
-            </View>
-            <View style={styles.metaBox}>
-              <Text style={styles.metaLabel}>Items Type</Text>
-              <Text style={styles.metaValue}>{orderData.items?.length || 0} unique</Text>
+          <View style={styles.earningContainer}>
+            <Text style={styles.sectionTitle}>Potential Earning</Text>
+            <View style={styles.earningCard}>
+              <View style={styles.earningMainRow}>
+                 <IndianRupee size={22} color={Colors.primary} strokeWidth={3} />
+                 <Text style={styles.earningTotalText}>
+                   {((parseFloat(orderData.delivery_fee) || 0) + 
+                     (parseFloat(orderData.rainy_surge_fee) || 0) + 
+                     (parseFloat(orderData.late_night_fee) || 0) + 
+                     (parseFloat(orderData.delivery_tip) || 0)).toFixed(0)}
+                 </Text>
+              </View>
+              <View style={styles.earningBreakdown}>
+                 <Text style={styles.breakdownItem}>Fee: ₹{(parseFloat(orderData.delivery_fee) || 0).toFixed(0)}</Text>
+                 {parseFloat(orderData.rainy_surge_fee) > 0 && <Text style={styles.breakdownItem}>Rainy: ₹{(parseFloat(orderData.rainy_surge_fee) || 0).toFixed(0)}</Text>}
+                 {parseFloat(orderData.late_night_fee) > 0 && <Text style={styles.breakdownItem}>Late: ₹{(parseFloat(orderData.late_night_fee) || 0).toFixed(0)}</Text>}
+                 {parseFloat(orderData.delivery_tip) > 0 && <Text style={styles.breakdownItem}>Tip: ₹{(parseFloat(orderData.delivery_tip) || 0).toFixed(0)}</Text>}
+              </View>
             </View>
           </View>
 
@@ -711,6 +746,12 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           )}
         </View>
       </Animated.View>
+
+      <LocationDisclosureModal
+        visible={showDisclosure}
+        onAccept={handleDisclosureAccept}
+        onDecline={handleDisclosureDecline}
+      />
     </View>
   );
 };
@@ -943,30 +984,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 10,
   },
-  metaRow: {
-    flexDirection: 'row',
-    gap: 10,
+  earningContainer: {
     marginBottom: 15,
   },
-  metaBox: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 10,
-    alignItems: 'center',
+  earningCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 15,
+    padding: 15,
     borderWidth: 1,
     borderColor: Colors.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  metaLabel: {
-    fontSize: 10,
-    fontFamily: Fonts.medium,
-    color: Colors.textLight,
+  earningMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  metaValue: {
-    fontSize: 13,
+  earningTotalText: {
+    fontSize: 28,
+    fontFamily: Fonts.black,
+    color: Colors.primary,
+  },
+  earningBreakdown: {
+    alignItems: 'flex-end',
+  },
+  breakdownItem: {
+    fontSize: 11,
     fontFamily: Fonts.bold,
-    color: Colors.text,
-    marginTop: 2,
+    color: Colors.textSecondary,
   },
   itemsCard: {
     backgroundColor: '#ffffff',

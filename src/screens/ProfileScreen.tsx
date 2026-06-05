@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   TouchableOpacity,
   Modal,
@@ -13,6 +12,7 @@ import {
   Alert,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   ChevronLeft, 
   MoreHorizontal, 
@@ -31,16 +31,56 @@ import {
   LogOut,
   ExternalLink,
   Eye,
-  EyeOff
+  EyeOff,
+  Info,
+  FileText,
+  Truck
 } from 'lucide-react-native';
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
+import { API_BASE_URL } from '../config/api';
+import { storage } from '../utils/storage';
 
 const PRIVACY_POLICY_URL = 'https://freshrun-admin.vercel.app/privacy';
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogout }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogout, onInfoPress, onMyDeliveriesPress }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [aadharExpanded, setAadharExpanded] = useState(false);
+
+  const handleDeleteAccount = () => {
+    setMenuVisible(false);
+    Alert.alert(
+      'Delete Account',
+      'Are you absolutely sure you want to delete your account? This action cannot be undone and all your data will be permanently erased.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const token = storage.getString('userToken');
+              const response = await fetch(`${API_BASE_URL}/user/account`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                },
+              });
+              const data = await response.json();
+              if (data.success) {
+                onLogout();
+              } else {
+                Alert.alert('Error', data.error || 'Failed to delete account');
+              }
+            } catch (error) {
+              console.error('Delete account error:', error);
+              Alert.alert('Error', 'Something went wrong. Please try again later.');
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const fullName = userData?.fullName || userData?.full_name || 'Partner';
   
@@ -60,7 +100,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
   ];
 
   const quickLinks = [
-    { id: 'q1', icon: <Package size={24} color="#333" />, label: 'My\nDeliveries' },
+    { id: 'q1', icon: <Package size={24} color="#333" />, label: 'My\nDeliveries', onPress: onMyDeliveriesPress },
     { id: 'q2', icon: <Star size={24} color="#333" />, label: 'Ratings' },
     { id: 'q3', icon: <Wallet size={24} color="#333" />, label: 'Earnings' },
     { id: 'q4', icon: <LifeBuoy size={24} color="#333" />, label: 'Support' },
@@ -109,7 +149,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
                   ]);
                 }}
               >
-                <Text style={[styles.menuOptionText, { color: Colors.error }]}>Logout</Text>
+                <Text style={styles.menuOptionText}>Logout</Text>
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={handleDeleteAccount}
+              >
+                <Text style={[styles.menuOptionText, { color: Colors.error }]}>Delete Account</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -149,7 +196,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
         {/* ── QUICK LINKS ─────────────────────────────────── */}
         <View style={styles.quickLinksRow}>
           {quickLinks.map(item => (
-            <TouchableOpacity key={item.id} style={styles.quickLinkCard}>
+            <TouchableOpacity 
+              key={item.id} 
+              style={styles.quickLinkCard}
+              onPress={(item as any).onPress}
+            >
               <View style={styles.quickLinkIconWrap}>
                 {item.icon}
               </View>
@@ -228,15 +279,17 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
 
         <View style={styles.menuCard}>
           {[
-            { id: 'h1', icon: <History size={20} color="#333" />, label: 'Delivery History' },
-            { id: 'h2', icon: <BarChart3 size={20} color="#333" />, label: 'Earnings Report' },
-            { id: 'h3', icon: <Bell size={20} color="#333" />, label: 'Notifications' },
-            { id: 'h4', icon: <ShieldCheck size={20} color="#333" />, label: 'Privacy Policy' },
+            { id: 'about', icon: <Info size={20} color="#333" />, label: 'About FreshRun' },
+            { id: 'privacy', icon: <ShieldCheck size={20} color="#333" />, label: 'Privacy Policy' },
+            { id: 'terms', icon: <FileText size={20} color="#333" />, label: 'Terms & Conditions' },
+            { id: 'refund', icon: <History size={20} color="#333" />, label: 'Refund Policy' },
+            { id: 'shipping', icon: <Truck size={20} color="#333" />, label: 'Shipping Policy' },
+            { id: 'contact', icon: <Mail size={20} color="#333" />, label: 'Contact Us' },
           ].map((item, i, arr) => (
             <TouchableOpacity
               key={item.label}
               style={[styles.menuItem, i === arr.length - 1 && styles.menuItemLast]}
-              onPress={item.id === 'h4' ? () => Linking.openURL(PRIVACY_POLICY_URL) : undefined}
+              onPress={() => onInfoPress(item.id as any)}
             >
               <View style={styles.menuItemLeft}>
                 <View style={{ marginRight: 15 }}>{item.icon}</View>
@@ -271,6 +324,8 @@ interface ProfileScreenProps {
   userData: any;
   onBack: () => void;
   onLogout: () => void;
+  onInfoPress: (type: 'about' | 'privacy' | 'terms' | 'refund' | 'shipping' | 'contact') => void;
+  onMyDeliveriesPress?: () => void;
 }
 
 const styles = StyleSheet.create({
