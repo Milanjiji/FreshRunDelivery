@@ -5,13 +5,13 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Image,
   StatusBar,
   ScrollView,
 } from 'react-native';
+import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import axios from 'axios';
@@ -71,7 +71,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
     try {
       const sanitizedPhone = phoneNumber.replace(/\D/g, '');
       if (!sanitizedPhone || sanitizedPhone.length < 10) {
-        Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+        Alertt.alert('Error', 'Please enter a valid 10-digit phone number');
         return;
       }
 
@@ -86,7 +86,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
         if (checkRes.data.success) {
           if (!checkRes.data.exists) {
             setLoading(false);
-            Alert.alert(
+            Alertt.alert(
               'Not Registered',
               'You are not registered as a partner. Please register first.',
               [
@@ -99,7 +99,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
 
           if (checkRes.data.approvalStatus === 'pending') {
             setLoading(false);
-            Alert.alert(
+            Alertt.alert(
               'Waiting for Approval',
               'Your account is currently waiting for admin approval. Please check back later.'
             );
@@ -108,7 +108,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
 
           if (checkRes.data.approvalStatus === 'rejected') {
             setLoading(false);
-            Alert.alert(
+            Alertt.alert(
               'Account Rejected',
               'Your registration was unfortunately rejected. Please contact support for more details.'
             );
@@ -129,7 +129,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
       );
       setConfirm(confirmation);
     } catch (error: any) {
-      Alert.alert('Login Failed', getAuthErrorMessage(error, 'Could not send OTP'));
+      Alertt.alert('Login Failed', getAuthErrorMessage(error, 'Could not send OTP'));
     } finally {
       setLoading(false);
     }
@@ -137,7 +137,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
 
   const confirmCode = async () => {
     if (!code || code.length < 6) {
-      Alert.alert('Error', 'Please enter a 6-digit code');
+      Alertt.alert('Error', 'Please enter a 6-digit code');
       return;
     }
     setLoading(true);
@@ -170,7 +170,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
       const message = axios.isAxiosError(error)
         ? error.response?.data?.error || error.message || 'Backend authentication failed'
         : getAuthErrorMessage(error, 'Invalid OTP');
-      Alert.alert('Verification Failed', message);
+      Alertt.alert('Verification Failed', message);
     } finally {
       setLoading(false);
     }

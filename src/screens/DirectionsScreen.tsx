@@ -7,7 +7,6 @@ import {
   StatusBar,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Linking,
   Dimensions,
   PermissionsAndroid,
@@ -15,6 +14,7 @@ import {
   Animated,
   PanResponder,
 } from 'react-native';
+import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Geolocation from '@react-native-community/geolocation';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -342,7 +342,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
       const result = await response.json();
       if (response.ok && result.success) {
-        Alert.alert('✅ Success', 'You have claimed this delivery pickup!', [
+        Alertt.alert('✅ Success', 'You have claimed this delivery pickup!', [
           {
             text: 'OK',
             onPress: () => {
@@ -357,11 +357,11 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           },
         ]);
       } else {
-        Alert.alert('Error', result.error || 'Failed to claim the order.');
+        Alertt.alert('Error', result.error || 'Failed to claim the order.');
       }
     } catch (error) {
       console.error('[DirectionsScreen] Opt-in error:', error);
-      Alert.alert('Error', 'Unable to reach server. Please try again.');
+      Alertt.alert('Error', 'Unable to reach server. Please try again.');
     } finally {
       setActionLoading(false);
     }
@@ -385,7 +385,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
       const result = await response.json();
       if (response.ok && result.success) {
-        Alert.alert('🚚 Dispatched', 'Order marked as picked up. Drive safely!', [
+        Alertt.alert('🚚 Dispatched', 'Order marked as picked up. Drive safely!', [
           {
             text: 'OK',
             onPress: () => {
@@ -401,11 +401,11 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           },
         ]);
       } else {
-        Alert.alert('Error', result.error || 'Failed to update order.');
+        Alertt.alert('Error', result.error || 'Failed to update order.');
       }
     } catch (error) {
       console.error('[DirectionsScreen] Pick-up error:', error);
-      Alert.alert('Error', 'Unable to reach server. Please try again.');
+      Alertt.alert('Error', 'Unable to reach server. Please try again.');
     } finally {
       setActionLoading(false);
     }
@@ -429,7 +429,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
       const result = await response.json();
       if (response.ok && result.success) {
-        Alert.alert('🎉 Delivered', 'Great job! Order completed successfully.', [
+        Alertt.alert('🎉 Delivered', 'Great job! Order completed successfully.', [
           {
             text: 'OK',
             onPress: () => {
@@ -442,11 +442,11 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           },
         ]);
       } else {
-        Alert.alert('Error', result.error || 'Failed to complete order.');
+        Alertt.alert('Error', result.error || 'Failed to complete order.');
       }
     } catch (error) {
       console.error('[DirectionsScreen] Delivery error:', error);
-      Alert.alert('Error', 'Unable to reach server. Please try again.');
+      Alertt.alert('Error', 'Unable to reach server. Please try again.');
     } finally {
       setActionLoading(false);
     }
@@ -458,7 +458,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     if (phone) {
       Linking.openURL(`tel:${phone}`);
     } else {
-      Alert.alert('Unavailable', 'Customer phone number is not available.');
+      Alertt.alert('Unavailable', 'Customer phone number is not available.');
     }
   };
 

@@ -9,9 +9,9 @@ import {
   Modal,
   TouchableWithoutFeedback,
   Image,
-  Alert,
   Linking,
 } from 'react-native';
+import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   ChevronLeft, 
@@ -49,7 +49,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
 
   const handleDeleteAccount = () => {
     setMenuVisible(false);
-    Alert.alert(
+    Alertt.alert(
       'Delete Account',
       'Are you absolutely sure you want to delete your account? This action cannot be undone and all your data will be permanently erased.',
       [
@@ -63,18 +63,20 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
               const response = await fetch(`${API_BASE_URL}/user/account`, {
                 method: 'DELETE',
                 headers: {
+                  'Content-Type': 'application/json',
                   'Authorization': `Bearer ${token}`,
                 },
+                body: JSON.stringify({ role: 'delivery' }),
               });
               const data = await response.json();
               if (data.success) {
                 onLogout();
               } else {
-                Alert.alert('Error', data.error || 'Failed to delete account');
+                Alertt.alert('Error', data.error || 'Failed to delete account');
               }
             } catch (error) {
               console.error('Delete account error:', error);
-              Alert.alert('Error', 'Something went wrong. Please try again later.');
+              Alertt.alert('Error', 'Something went wrong. Please try again later.');
             }
           }
         }
@@ -143,7 +145,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
                 style={styles.menuOption}
                 onPress={() => {
                   setMenuVisible(false);
-                  Alert.alert('Logout', 'Are you sure you want to logout?', [
+                  Alertt.alert('Logout', 'Are you sure you want to logout?', [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Logout', style: 'destructive', onPress: onLogout },
                   ]);
@@ -304,7 +306,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
         <TouchableOpacity
           style={styles.logoutBtn}
           onPress={() =>
-            Alert.alert('Logout', 'Are you sure you want to logout?', [
+            Alertt.alert('Logout', 'Are you sure you want to logout?', [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Logout', style: 'destructive', onPress: onLogout },
             ])

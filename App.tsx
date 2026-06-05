@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
-  Alert,
   View,
   Text,
 } from 'react-native';
@@ -11,6 +10,7 @@ import io from 'socket.io-client';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { storage } from './src/utils/storage';
 import LoadingTransition from './src/components/LoadingTransition';
+import { Alertt, CustomAlert } from './src/components/Alertt';
 import LoginScreen from './src/screens/LoginScreen';
 import RegistrationScreen from './src/screens/RegistrationScreen';
 import ApprovalStatusScreen from './src/screens/ApprovalStatusScreen';
@@ -28,6 +28,26 @@ import { API_BASE_URL } from './src/config/api';
 const BACKEND_URL = API_BASE_URL;
 
 import auth from '@react-native-firebase/auth';
+import appCheck from '@react-native-firebase/app-check';
+
+// Initialize App Check
+const rnfbProvider = appCheck().newReactNativeFirebaseAppCheckProvider();
+rnfbProvider.configure({
+  android: {
+    provider: 'playIntegrity',
+  },
+  apple: {
+    provider: 'deviceCheck',
+  },
+});
+
+appCheck().initializeAppCheck({
+  provider: rnfbProvider,
+  isTokenAutoRefreshEnabled: true,
+});
+
+// Disable browser-based reCAPTCHA by forcing Play Integrity
+auth().settings.appVerificationDisabledForTesting = false;
 
 function App() {
   const [currentScreen, setCurrentScreen] = useState<'login' | 'register' | 'complete_profile'>('login');
@@ -156,7 +176,7 @@ function App() {
 
   const handleLoginSuccess = (token: string, user: any) => {
     if (user.role === 'delivery' && user.approvalStatus === 'pending') {
-      Alert.alert(
+      Alertt.alert(
         '⏳ Approval Pending',
         'Your application is currently being reviewed. You\'ll be notified as soon as you\'re approved!',
         [{ text: 'OK' }]
@@ -251,6 +271,7 @@ function App() {
                 renderLoggedInContent()
               )}
             </SafeAreaView>
+            <CustomAlert />
           </>
         )}
       </View>

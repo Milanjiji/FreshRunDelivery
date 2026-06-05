@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -14,6 +13,7 @@ import {
   StatusBar,
   Linking,
 } from 'react-native';
+import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, ChevronLeft, Trash2 } from 'lucide-react-native';
 import axios from 'axios';
@@ -88,11 +88,11 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 
       if (resData.secure_url) {
         setAadharImage(resData.secure_url);
-        Alert.alert('Success', 'Aadhar Card uploaded successfully!');
+        Alertt.alert('Success', 'Aadhar Card uploaded successfully!');
       }
     } catch (error: any) {
       console.error('[CloudinaryUpload] error:', error.message || error);
-      Alert.alert('Upload Failed', 'Could not upload image. Please try again.');
+      Alertt.alert('Upload Failed', 'Could not upload image. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -100,15 +100,15 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 
   const handleRegister = async () => {
     if (!fullName.trim() || !email.trim() || !phoneNumber.trim() || !aadharNumber.trim() || !aadharImage) {
-      Alert.alert('Error', 'Please fill in all fields and upload your Aadhar Card');
+      Alertt.alert('Error', 'Please fill in all fields and upload your Aadhar Card');
       return;
     }
     if (phoneNumber.length < 10) {
-      Alert.alert('Error', 'Please enter a valid phone number');
+      Alertt.alert('Error', 'Please enter a valid phone number');
       return;
     }
     if (aadharNumber.length < 12) {
-      Alert.alert('Error', 'Aadhar Number must be 12 digits');
+      Alertt.alert('Error', 'Aadhar Number must be 12 digits');
       return;
     }
 
@@ -122,7 +122,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
           const checkRes = await axios.get(`${BACKEND_URL}/auth/check-partner/${sanitizedPhone}`);
           if (checkRes.data.success && checkRes.data.exists) {
             setLoading(false);
-            Alert.alert(
+            Alertt.alert(
               'Account Exists',
               'You already have a delivery partner account with this phone number. Please log in instead.',
               [
@@ -163,11 +163,11 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       console.log('Sending OTP for registration:', formattedPhone);
       const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
       setConfirm(confirmation);
-      Alert.alert('Verification Sent', 'Please enter the 6-digit code sent to your phone.');
+      Alertt.alert('Verification Sent', 'Please enter the 6-digit code sent to your phone.');
     } catch (error: any) {
       console.error('Registration/Update Error:', error);
       const message = error?.response?.data?.error || error.message || 'Action failed';
-      Alert.alert('Error', message);
+      Alertt.alert('Error', message);
     } finally {
       setLoading(false);
     }
@@ -175,7 +175,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 
   const confirmRegistrationCode = async () => {
     if (!otpCode || otpCode.length < 6) {
-      Alert.alert('Error', 'Please enter the 6-digit code');
+      Alertt.alert('Error', 'Please enter the 6-digit code');
       return;
     }
 
@@ -211,7 +211,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
     } catch (error: any) {
       console.error('Registration Verification Error:', error);
       const message = error?.response?.data?.error || error.message || 'Verification failed';
-      Alert.alert('Verification Failed', message);
+      Alertt.alert('Verification Failed', message);
     } finally {
       setLoading(false);
     }
