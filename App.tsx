@@ -15,6 +15,7 @@ import { Alertt, CustomAlert } from './src/components/Alertt';
 import LoginScreen from './src/screens/LoginScreen';
 import RegistrationScreen from './src/screens/RegistrationScreen';
 import ApprovalStatusScreen from './src/screens/ApprovalStatusScreen';
+import PaymentOnboardingScreen from './src/screens/PaymentOnboardingScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import { 
   requestNotificationPermission, 
@@ -308,6 +309,39 @@ const styles = StyleSheet.create({
   homeContainer: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#333',
+    textAlign: 'center',
+  },
+  infoText: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 8,
+  },
+  logoutButton: {
+    marginTop: 40,
+    backgroundColor: '#FF3B30',
+    padding: 15,
+    borderRadius: 12,
+    width: '80%',
+    alignItems: 'center',
+  },
+  logoutText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
+
+export default App;
+
+yContent: 'center',
     alignItems: 'center',
     padding: 20,
   },

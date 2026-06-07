@@ -32,6 +32,7 @@ interface ApprovalStatusScreenProps {
   onApproved: () => void;
   onLogout: () => void;
   onCompleteProfile: () => void;
+  onSetupPayments: () => void;
 }
 
 const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ 
@@ -39,9 +40,11 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
   userData,
   onApproved, 
   onLogout,
-  onCompleteProfile 
+  onCompleteProfile,
+  onSetupPayments 
 }) => {
   const [currentStatus, setCurrentStatus] = useState<'pending' | 'approved' | 'rejected'>(initialStatus);
+  const [razorpayStatus, setRazorpayStatus] = useState<string>(userData?.razorpay_kyc_status || 'created');
   const [isProfileComplete, setIsProfileComplete] = useState(userData?.isProfileComplete);
   const [isChecking, setIsChecking] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
@@ -65,15 +68,27 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
       if (data.success && data.user) {
         const newStatus = data.user.approvalStatus;
         const newProfileComplete = data.user.isProfileComplete;
+        const newRazorpayStatus = data.user.razorpay_kyc_status || 'created';
+        
         setLastChecked(new Date());
 
-        if (newStatus !== currentStatus || newProfileComplete !== isProfileComplete) {
+        if (newStatus !== currentStatus || newProfileComplete !== isProfileComplete || newRazorpayStatus !== razorpayStatus) {
           setCurrentStatus(newStatus);
           setIsProfileComplete(newProfileComplete);
+          setRazorpayStatus(newRazorpayStatus);
+          
           const existingData = storage.getObject<any>('userData') || {};
-          storage.setItem('userData', { ...existingData, approvalStatus: newStatus, isProfileComplete: newProfileComplete });
+          storage.setItem('userData', { 
+            ...existingData, 
+            approvalStatus: newStatus, 
+            isProfileComplete: newProfileComplete,
+            razorpay_kyc_status: newRazorpayStatus
+          });
 
-          if (newStatus === 'approved') {
+          // Logic for finishing onboarding:
+          // 1. Admin must approve (currentStatus === 'approved')
+          // 2. Either Razorpay is activated OR they chose to work while pending (if we implement that preference check here)
+          if (newStatus === 'approved' && (newRazorpayStatus === 'activated' || data.user.delivery_preference === 'cash_only_while_pending')) {
             if (intervalRef.current) clearInterval(intervalRef.current);
             onApproved();
           }
@@ -84,7 +99,7 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
     } finally {
       setIsChecking(false);
     }
-  }, [currentStatus, isProfileComplete, onApproved]);
+  }, [currentStatus, isProfileComplete, razorpayStatus, onApproved]);
 
   useEffect(() => {
     checkApprovalStatus();
@@ -110,9 +125,19 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
       active: isProfileComplete && currentStatus === 'pending',
     },
     {
-      title: 'Final Approval',
+      title: 'Payment Setup',
+      description: razorpayStatus === 'activated' 
+        ? 'Your bank account is verified!' 
+        : razorpayStatus === 'needs_clarification'
+        ? 'Action Required: Check your payment details.'
+        : 'Connect your bank account to receive online payments.',
+      completed: razorpayStatus === 'activated',
+      active: currentStatus === 'approved' && razorpayStatus !== 'activated',
+    },
+    {
+      title: 'Ready to Earn',
       description: 'Start delivering and earning!',
-      completed: currentStatus === 'approved',
+      completed: currentStatus === 'approved' && (razorpayStatus === 'activated' || userData?.delivery_preference === 'cash_only_while_pending'),
       active: false,
     },
   ];
@@ -130,6 +155,8 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
           <PageSubtitle style={styles.subtitle}>
             {currentStatus === 'pending'
               ? "We're reviewing your application."
+              : razorpayStatus !== 'activated' && currentStatus === 'approved'
+              ? "Verify your bank details to get started."
               : currentStatus === 'rejected'
               ? 'Application was not approved.'
               : 'Welcome to the team!'}
@@ -165,6 +192,24 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
               onPress={onCompleteProfile}
             >
               <Text style={styles.completeBtnText}>Complete Registration</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {currentStatus === 'approved' && razorpayStatus !== 'activated' && (
+          <View style={styles.incompleteBox}>
+            <View style={styles.incompleteHeader}>
+              <AlertCircle size={20} color={Colors.primary} />
+              <Text style={styles.incompleteTitle}>Payment Setup Needed</Text>
+            </View>
+            <Text style={styles.incompleteDescription}>
+              Admin has approved your profile! Now, please provide your bank details to receive payments for online orders.
+            </Text>
+            <TouchableOpacity 
+              style={styles.completeBtn} 
+              onPress={onSetupPayments}
+            >
+              <Text style={styles.completeBtnText}>Setup Bank Account</Text>
             </TouchableOpacity>
           </View>
         )}
