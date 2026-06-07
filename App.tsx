@@ -5,6 +5,7 @@ import {
   Text,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+
 import messaging from '@react-native-firebase/messaging';
 import io from 'socket.io-client';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -338,3 +339,4 @@ const styles = StyleSheet.create({
 });
 
 export default App;
+
