@@ -14,7 +14,9 @@ import {
   AlertCircle, 
   LogOut, 
   RefreshCcw,
-  ChevronLeft
+  ChevronLeft,
+  AlertTriangle,
+  XCircle
 } from 'lucide-react-native';
 import { PageTitle, PageSubtitle } from '../components/Typography';
 import { Fonts } from '../theme/typography';
@@ -24,7 +26,7 @@ import { storage } from '../utils/storage';
 import { API_BASE_URL } from '../config/api';
 
 const BACKEND_URL = API_BASE_URL;
-const POLL_INTERVAL_MS = 10000; // 10 seconds
+const POLL_INTERVAL_MS = 5000; // Poll every 5 seconds for fast updates
 
 interface ApprovalStatusScreenProps {
   status: 'pending' | 'approved' | 'rejected';
@@ -32,7 +34,6 @@ interface ApprovalStatusScreenProps {
   onApproved: () => void;
   onLogout: () => void;
   onCompleteProfile: () => void;
-  onSetupPayments: () => void;
 }
 
 const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({ 
@@ -40,11 +41,12 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
   userData,
   onApproved, 
   onLogout,
-  onCompleteProfile,
-  onSetupPayments 
+  onCompleteProfile
 }) => {
   const [currentStatus, setCurrentStatus] = useState<'pending' | 'approved' | 'rejected'>(initialStatus);
   const [razorpayStatus, setRazorpayStatus] = useState<string>(userData?.razorpay_kyc_status || 'created');
+  const [razorpayRejectionReason, setRazorpayRejectionReason] = useState<string | null>(userData?.razorpay_rejection_reason || null);
+  const [adminRejectionReason, setAdminRejectionReason] = useState<string | null>(userData?.rejection_reason || null);
   const [isProfileComplete, setIsProfileComplete] = useState(userData?.isProfileComplete);
   const [isChecking, setIsChecking] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
@@ -69,26 +71,37 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
         const newStatus = data.user.approvalStatus;
         const newProfileComplete = data.user.isProfileComplete;
         const newRazorpayStatus = data.user.razorpay_kyc_status || 'created';
+        const newRazorpayRejectionReason = data.user.razorpay_rejection_reason || null;
+        const newAdminRejectionReason = data.user.rejection_reason || null;
         
         setLastChecked(new Date());
 
-        if (newStatus !== currentStatus || newProfileComplete !== isProfileComplete || newRazorpayStatus !== razorpayStatus) {
+        // Update states if changed
+        if (
+          newStatus !== currentStatus || 
+          newProfileComplete !== isProfileComplete || 
+          newRazorpayStatus !== razorpayStatus ||
+          newRazorpayRejectionReason !== razorpayRejectionReason ||
+          newAdminRejectionReason !== adminRejectionReason
+        ) {
           setCurrentStatus(newStatus);
           setIsProfileComplete(newProfileComplete);
           setRazorpayStatus(newRazorpayStatus);
+          setRazorpayRejectionReason(newRazorpayRejectionReason);
+          setAdminRejectionReason(newAdminRejectionReason);
           
           const existingData = storage.getObject<any>('userData') || {};
           storage.setItem('userData', { 
             ...existingData, 
             approvalStatus: newStatus, 
             isProfileComplete: newProfileComplete,
-            razorpay_kyc_status: newRazorpayStatus
+            razorpay_kyc_status: newRazorpayStatus,
+            razorpay_rejection_reason: newRazorpayRejectionReason,
+            rejection_reason: newAdminRejectionReason
           });
 
-          // Logic for finishing onboarding:
-          // 1. Admin must approve (currentStatus === 'approved')
-          // 2. Either Razorpay is activated OR they chose to work while pending (if we implement that preference check here)
-          if (newStatus === 'approved' && (newRazorpayStatus === 'activated' || data.user.delivery_preference === 'cash_only_while_pending')) {
+          // Enforce: Both Admin must approve AND Razorpay KYC must be approved (activated)
+          if (newStatus === 'approved' && newRazorpayStatus === 'activated') {
             if (intervalRef.current) clearInterval(intervalRef.current);
             onApproved();
           }
@@ -99,7 +112,7 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
     } finally {
       setIsChecking(false);
     }
-  }, [currentStatus, isProfileComplete, razorpayStatus, onApproved]);
+  }, [currentStatus, isProfileComplete, razorpayStatus, razorpayRejectionReason, adminRejectionReason, onApproved]);
 
   useEffect(() => {
     checkApprovalStatus();
@@ -109,38 +122,10 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
     };
   }, [checkApprovalStatus]);
 
-  const stages = [
-    {
-      title: 'Registration Submitted',
-      description: isProfileComplete 
-        ? 'Your documents have been received.' 
-        : 'Please complete your registration.',
-      completed: isProfileComplete,
-      active: !isProfileComplete,
-    },
-    {
-      title: 'Admin Verification',
-      description: 'Our team is reviewing your Aadhar details.',
-      completed: currentStatus === 'approved',
-      active: isProfileComplete && currentStatus === 'pending',
-    },
-    {
-      title: 'Payment Setup',
-      description: razorpayStatus === 'activated' 
-        ? 'Your bank account is verified!' 
-        : razorpayStatus === 'needs_clarification'
-        ? 'Action Required: Check your payment details.'
-        : 'Connect your bank account to receive online payments.',
-      completed: razorpayStatus === 'activated',
-      active: currentStatus === 'approved' && razorpayStatus !== 'activated',
-    },
-    {
-      title: 'Ready to Earn',
-      description: 'Start delivering and earning!',
-      completed: currentStatus === 'approved' && (razorpayStatus === 'activated' || userData?.delivery_preference === 'cash_only_while_pending'),
-      active: false,
-    },
-  ];
+  const hasIssues = currentStatus === 'rejected' || 
+                    razorpayStatus === 'needs_clarification' || 
+                    razorpayStatus === 'rejected' || 
+                    razorpayStatus === 'suspended';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -151,15 +136,13 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
           <TouchableOpacity style={styles.backBtn} onPress={onLogout}>
             <ChevronLeft size={24} color={Colors.text} strokeWidth={2.5} />
           </TouchableOpacity>
-          <PageTitle style={styles.title}>Application Status</PageTitle>
+          <PageTitle style={styles.title}>Verification Status</PageTitle>
           <PageSubtitle style={styles.subtitle}>
-            {currentStatus === 'pending'
-              ? "We're reviewing your application."
-              : razorpayStatus !== 'activated' && currentStatus === 'approved'
-              ? "Verify your bank details to get started."
-              : currentStatus === 'rejected'
-              ? 'Application was not approved.'
-              : 'Welcome to the team!'}
+            {currentStatus === 'approved' && razorpayStatus === 'activated'
+              ? 'Welcome to the team! All verifications complete.'
+              : hasIssues
+              ? 'Action Required: Verification details need correction.'
+              : "We're reviewing your credentials. Usually takes 1-2 business days."}
           </PageSubtitle>
 
           <View style={styles.pollingBadge}>
@@ -173,101 +156,106 @@ const ApprovalStatusScreen: React.FC<ApprovalStatusScreenProps> = ({
                 ? 'Checking status...'
                 : lastChecked
                 ? `Last checked: ${lastChecked.toLocaleTimeString()}`
-                : 'Live Tracking Active'}
+                : 'Live Status Active'}
             </Text>
           </View>
         </View>
 
-        {!isProfileComplete && currentStatus === 'pending' && (
-          <View style={styles.incompleteBox}>
-            <View style={styles.incompleteHeader}>
-              <AlertCircle size={20} color={Colors.primary} />
-              <Text style={styles.incompleteTitle}>Action Required</Text>
+        {/* Action Panel for Rejection or Clarification */}
+        {hasIssues && (
+          <View style={styles.issueBox}>
+            <View style={styles.issueHeader}>
+              <AlertTriangle size={20} color={Colors.error} />
+              <Text style={styles.issueTitle}>Action Required</Text>
             </View>
-            <Text style={styles.incompleteDescription}>
-              Your registration is incomplete. Please provide your details and documents to proceed with the approval process.
+            <Text style={styles.issueDescription}>
+              Please review the rejection details below and update your registration profile or bank details to resubmit.
             </Text>
             <TouchableOpacity 
               style={styles.completeBtn} 
               onPress={onCompleteProfile}
             >
-              <Text style={styles.completeBtnText}>Complete Registration</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {currentStatus === 'approved' && razorpayStatus !== 'activated' && (
-          <View style={styles.incompleteBox}>
-            <View style={styles.incompleteHeader}>
-              <AlertCircle size={20} color={Colors.primary} />
-              <Text style={styles.incompleteTitle}>Payment Setup Needed</Text>
-            </View>
-            <Text style={styles.incompleteDescription}>
-              Admin has approved your profile! Now, please provide your bank details to receive payments for online orders.
-            </Text>
-            <TouchableOpacity 
-              style={styles.completeBtn} 
-              onPress={onSetupPayments}
-            >
-              <Text style={styles.completeBtnText}>Setup Bank Account</Text>
+              <Text style={styles.completeBtnText}>Update Profile & Bank details</Text>
             </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.stagesContainer}>
-          {stages.map((stage, index) => (
-            <View key={index} style={styles.stageRow}>
-              <View style={styles.indicatorContainer}>
-                <View
-                  style={[
-                    styles.circle,
-                    stage.completed
-                      ? styles.completedCircle
-                      : stage.active
-                      ? styles.activeCircle
-                      : styles.inactiveCircle,
-                  ]}
-                >
-                  {stage.completed ? (
-                    <CheckCircle2 size={24} color="#fff" />
-                  ) : stage.active ? (
-                    <Clock size={20} color={Colors.primary} strokeWidth={2.5} />
-                  ) : (
-                    <Text style={styles.stageNumber}>{index + 1}</Text>
-                  )}
-                </View>
-                {index < stages.length - 1 && (
-                  <View
-                    style={[
-                      styles.line,
-                      stage.completed ? styles.completedLine : styles.inactiveLine,
-                    ]}
-                  />
+          {/* Track 1: Admin Approval */}
+          <View style={styles.stageRow}>
+            <View style={styles.indicatorContainer}>
+              <View
+                style={[
+                  styles.circle,
+                  currentStatus === 'approved'
+                    ? styles.completedCircle
+                    : currentStatus === 'rejected'
+                    ? styles.rejectedCircle
+                    : styles.activeCircle,
+                ]}
+              >
+                {currentStatus === 'approved' ? (
+                  <CheckCircle2 size={24} color="#fff" />
+                ) : currentStatus === 'rejected' ? (
+                  <XCircle size={24} color="#fff" />
+                ) : (
+                  <Clock size={20} color={Colors.primary} strokeWidth={2.5} />
                 )}
               </View>
-              <View style={styles.stageTextContainer}>
-                <Text
-                  style={[
-                    styles.stageTitle,
-                    stage.completed || stage.active ? styles.activeText : styles.inactiveText,
-                  ]}
-                >
-                  {stage.title}
-                </Text>
-                <Text style={styles.stageDescription}>{stage.description}</Text>
+              <View style={[styles.line, currentStatus === 'approved' ? styles.completedLine : styles.inactiveLine]} />
+            </View>
+            <View style={styles.stageTextContainer}>
+              <Text style={[styles.stageTitle, currentStatus === 'approved' ? styles.activeText : styles.pendingText]}>
+                Admin Verification
+              </Text>
+              <Text style={styles.stageDescription}>
+                {currentStatus === 'approved'
+                  ? 'Aadhar card and profile details approved by admin.'
+                  : currentStatus === 'rejected'
+                  ? `Rejected: ${adminRejectionReason || 'Documents or profile details were invalid.'}`
+                  : 'Admin is verifying your Aadhar card and profile details.'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Track 2: Razorpay KYC */}
+          <View style={styles.stageRow}>
+            <View style={styles.indicatorContainer}>
+              <View
+                style={[
+                  styles.circle,
+                  razorpayStatus === 'activated'
+                    ? styles.completedCircle
+                    : (razorpayStatus === 'needs_clarification' || razorpayStatus === 'rejected' || razorpayStatus === 'suspended')
+                    ? styles.rejectedCircle
+                    : styles.activeCircle,
+                ]}
+              >
+                {razorpayStatus === 'activated' ? (
+                  <CheckCircle2 size={24} color="#fff" />
+                ) : (razorpayStatus === 'needs_clarification' || razorpayStatus === 'rejected' || razorpayStatus === 'suspended') ? (
+                  <XCircle size={24} color="#fff" />
+                ) : (
+                  <Clock size={20} color={Colors.primary} strokeWidth={2.5} />
+                )}
               </View>
             </View>
-          ))}
-        </View>
-
-        {currentStatus === 'rejected' && (
-          <View style={styles.rejectedContainer}>
-            <AlertCircle size={20} color={Colors.error} style={{ marginBottom: 8 }} />
-            <Text style={styles.rejectedText}>
-              Please contact support if you believe this is a mistake.
-            </Text>
+            <View style={styles.stageTextContainer}>
+              <Text style={[styles.stageTitle, razorpayStatus === 'activated' ? styles.activeText : styles.pendingText]}>
+                Razorpay KYC & Settlements
+              </Text>
+              <Text style={styles.stageDescription}>
+                {razorpayStatus === 'activated'
+                  ? 'Bank account and PAN details verified successfully.'
+                  : razorpayStatus === 'needs_clarification'
+                  ? `Clarification Needed: ${razorpayRejectionReason || 'Please check your bank details.'}`
+                  : (razorpayStatus === 'rejected' || razorpayStatus === 'suspended')
+                  ? `Rejected: ${razorpayRejectionReason || 'Bank or PAN verification failed.'}`
+                  : 'Razorpay is verifying your bank account and PAN credentials.'}
+              </Text>
+            </View>
           </View>
-        )}
+        </View>
 
         <View style={styles.footer}>
           <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
@@ -291,10 +279,10 @@ const styles = StyleSheet.create({
   },
   header: {
     marginTop: 20,
-    marginBottom: 40,
+    marginBottom: 30,
   },
   backBtn: {
-    marginBottom: 20,
+    marginBottom: 15,
     marginLeft: -10,
     padding: 10,
   },
@@ -330,10 +318,11 @@ const styles = StyleSheet.create({
   },
   stagesContainer: {
     flex: 1,
+    marginTop: 20,
   },
   stageRow: {
     flexDirection: 'row',
-    marginBottom: 30,
+    marginBottom: 40,
   },
   indicatorContainer: {
     alignItems: 'center',
@@ -349,29 +338,24 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   completedCircle: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: '#10B981', // Emerald green
+    borderColor: '#10B981',
+  },
+  rejectedCircle: {
+    backgroundColor: '#EF4444', // Red error
+    borderColor: '#EF4444',
   },
   activeCircle: {
     backgroundColor: Colors.white,
     borderColor: Colors.primary,
   },
-  inactiveCircle: {
-    backgroundColor: Colors.white,
-    borderColor: Colors.border,
-  },
-  stageNumber: {
-    fontSize: 16,
-    fontFamily: Fonts.bold,
-    color: Colors.border,
-  },
   line: {
     width: 2,
-    height: 40,
+    height: 70,
     marginTop: 5,
   },
   completedLine: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#10B981',
   },
   inactiveLine: {
     backgroundColor: Colors.border,
@@ -383,13 +367,13 @@ const styles = StyleSheet.create({
   stageTitle: {
     fontSize: 17,
     fontFamily: Fonts.bold,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   activeText: {
-    color: Colors.text,
+    color: '#10B981',
   },
-  inactiveText: {
-    color: Colors.textLight,
+  pendingText: {
+    color: Colors.text,
   },
   stageDescription: {
     fontSize: 13,
@@ -397,26 +381,26 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 18,
   },
-  incompleteBox: {
-    backgroundColor: '#F0F7FF',
+  issueBox: {
+    backgroundColor: '#FFF5F5',
     borderRadius: 15,
     padding: 20,
-    marginBottom: 30,
+    marginBottom: 25,
     borderWidth: 1,
-    borderColor: '#D0E7FF',
+    borderColor: '#FEE2E2',
   },
-  incompleteHeader: {
+  issueHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
   },
-  incompleteTitle: {
+  issueTitle: {
     fontSize: 16,
     fontFamily: Fonts.bold,
-    color: Colors.primary,
+    color: '#EF4444',
     marginLeft: 8,
   },
-  incompleteDescription: {
+  issueDescription: {
     fontSize: 14,
     fontFamily: Fonts.regular,
     color: Colors.textSecondary,
@@ -434,21 +418,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontFamily: Fonts.bold,
-  },
-  rejectedContainer: {
-    padding: 20,
-    backgroundColor: '#FFF0F0',
-    borderRadius: 15,
-    marginBottom: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#FFDEDE',
-  },
-  rejectedText: {
-    color: Colors.error,
-    fontSize: 14,
-    fontFamily: Fonts.medium,
-    textAlign: 'center',
   },
   footer: {
     paddingBottom: 40,

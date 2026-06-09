@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera, ChevronLeft, Trash2 } from 'lucide-react-native';
+import { Camera, ChevronLeft, Trash2, ChevronRight, Landmark, CreditCard, User } from 'lucide-react-native';
 import axios from 'axios';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { launchImageLibrary } from 'react-native-image-picker';
@@ -39,16 +39,24 @@ interface RegistrationScreenProps {
 }
 
 const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegisterSuccess, isUpdate = false }) => {
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // --- Step 1: Personal Details ---
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const currentUser = auth().currentUser;
   const [phoneNumber, setPhoneNumber] = useState(currentUser?.phoneNumber?.replace('+91', '') || '');
   const [aadharNumber, setAadharNumber] = useState('');
   const [aadharImage, setAadharImage] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(false);
-  
-  // OTP related state
+
+  // --- Step 2: UPI Details ---
+  const [upiId, setUpiId] = useState('');
+  const [upiQrImage, setUpiQrImage] = useState<string | null>(null);
+  const [qrUploading, setQrUploading] = useState(false);
+
+  // --- Step 3: OTP Verification ---
   const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
   const [otpCode, setOtpCode] = useState('');
 
@@ -88,7 +96,6 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 
       if (resData.secure_url) {
         setAadharImage(resData.secure_url);
-        Alertt.alert('Success', 'Aadhar Card uploaded successfully!');
       }
     } catch (error: any) {
       console.error('[CloudinaryUpload] error:', error.message || error);
@@ -98,17 +105,116 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
     }
   };
 
-  const handleRegister = async () => {
+  const handleSelectQrImage = async () => {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.7,
+    });
+    if (result.assets && result.assets[0].uri) {
+      uploadQrToCloudinary(result.assets[0]);
+    }
+  };
+
+  const uploadQrToCloudinary = async (asset: any) => {
+    setQrUploading(true);
+    try {
+      const data = new FormData();
+      data.append('file', {
+        uri: asset.uri,
+        type: asset.type || 'image/jpeg',
+        name: asset.fileName || 'upload.jpg',
+      } as any);
+      data.append('upload_preset', UPLOAD_PRESET);
+
+      console.log('Uploading QR code to Cloudinary:', CLOUDINARY_URL);
+      const response = await fetch(CLOUDINARY_URL, {
+        method: 'POST',
+        body: data,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Cloudinary status: ${response.status} - ${errText}`);
+      }
+
+      const resData = await response.json();
+
+      if (resData.secure_url) {
+        setUpiQrImage(resData.secure_url);
+      }
+    } catch (error: any) {
+      console.error('[CloudinaryUpload QR] error:', error.message || error);
+      Alertt.alert('Upload Failed', 'Could not upload image. Please try again.');
+    } finally {
+      setQrUploading(false);
+    }
+  };
+
+  const handleNextStep1 = async () => {
     if (!fullName.trim() || !email.trim() || !phoneNumber.trim() || !aadharNumber.trim() || !aadharImage) {
       Alertt.alert('Error', 'Please fill in all fields and upload your Aadhar Card');
       return;
     }
-    if (phoneNumber.length < 10) {
-      Alertt.alert('Error', 'Please enter a valid phone number');
+    if (phoneNumber.length !== 10) {
+      Alertt.alert('Error', 'Please enter a valid 10-digit phone number');
       return;
     }
-    if (aadharNumber.length < 12) {
+    if (aadharNumber.length !== 12) {
       Alertt.alert('Error', 'Aadhar Number must be 12 digits');
+      return;
+    }
+
+    const sanitizedPhone = phoneNumber.replace(/\D/g, '');
+    setLoading(true);
+    try {
+      if (!isUpdate) {
+        const checkRes = await axios.get(`${BACKEND_URL}/auth/check-partner/${sanitizedPhone}`);
+        if (checkRes.data.success && checkRes.data.exists) {
+          setLoading(false);
+          Alertt.alert(
+            'Account Exists',
+            'You already have a delivery partner account with this phone number. Please log in instead.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Go to Login', onPress: onBack }
+            ]
+          );
+          return;
+        }
+      }
+
+
+      setStep(2);
+    } catch (error: any) {
+      console.error('Step 1 Verification Error:', error);
+      Alertt.alert('Error', 'Verification failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNextStep2 = async () => {
+    if (!upiId.trim() || !upiQrImage) {
+      Alertt.alert('Error', 'Please enter your UPI ID and upload your UPI QR Code image');
+      return;
+    }
+    if (!upiId.includes('@')) {
+      Alertt.alert('Error', 'Please enter a valid UPI ID (e.g. name@okaxis)');
+      return;
+    }
+
+    if (isUpdate && currentUser) {
+      setLoading(true);
+      try {
+        console.log('Skipping OTP as user is already authenticated (isUpdate mode)');
+        const idToken = await currentUser.getIdToken();
+        await completeRegistrationFlow(idToken);
+      } catch (error: any) {
+        console.error('Update Profile Direct Error:', error);
+        Alertt.alert('Update Failed', error.message || 'Action failed');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -116,60 +222,56 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
     const formattedPhone = `+91${sanitizedPhone}`;
     setLoading(true);
     try {
-      // --- Pre-OTP Check (Case 3) ---
-      if (!isUpdate) {
-        try {
-          const checkRes = await axios.get(`${BACKEND_URL}/auth/check-partner/${sanitizedPhone}`);
-          if (checkRes.data.success && checkRes.data.exists) {
-            setLoading(false);
-            Alertt.alert(
-              'Account Exists',
-              'You already have a delivery partner account with this phone number. Please log in instead.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Go to Login', onPress: onBack }
-              ]
-            );
-            return;
-          }
-        } catch (err) {
-          console.warn('Pre-registration check failed:', err);
-        }
-      }
-
-      if (isUpdate && currentUser) {
-        console.log('Skipping OTP as user is already authenticated (isUpdate mode)');
-        const idToken = await currentUser.getIdToken();
-        const payload = {
-          idToken,
-          fullName,
-          email,
-          aadharNumber,
-          aadharImage,
-        };
-
-        const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
-        if (response.data.success) {
-          const { user } = response.data;
-          storage.setItem('userToken', idToken);
-          storage.setItem('userData', user);
-          onRegisterSuccess(idToken, user);
-        } else {
-          throw new Error(response.data.error || 'Update failed');
-        }
-        return;
-      }
-
       console.log('Sending OTP for registration:', formattedPhone);
       const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
       setConfirm(confirmation);
-      Alertt.alert('Verification Sent', 'Please enter the 6-digit code sent to your phone.');
+      setStep(3);
     } catch (error: any) {
-      console.error('Registration/Update Error:', error);
-      const message = error?.response?.data?.error || error.message || 'Action failed';
-      Alertt.alert('Error', message);
+      console.error('Send OTP Error:', error);
+      Alertt.alert('Error', error.message || 'Failed to send verification code.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const completeRegistrationFlow = async (idToken: string) => {
+    const payload = {
+      idToken,
+      fullName,
+      email,
+      aadharNumber,
+      aadharImage,
+    };
+
+    const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
+    if (response.data.success) {
+      const { user } = response.data;
+      
+      console.log('User registered on backend. Initiating UPI onboarding payload...');
+      const onboardPayload = {
+        role: 'delivery',
+        upiId,
+        upiQrImage,
+        name: fullName,
+        email,
+        phone: phoneNumber
+      };
+
+      const onboardResponse = await axios.post(
+        `${BACKEND_URL}/payments/onboard`,
+        onboardPayload,
+        { headers: { Authorization: `Bearer ${idToken}` } }
+      );
+
+      if (onboardResponse.data.success) {
+        storage.setItem('userToken', idToken);
+        storage.setItem('userData', { ...user, razorpay_kyc_status: 'created' });
+        onRegisterSuccess(idToken, { ...user, razorpay_kyc_status: 'created' });
+      } else {
+        throw new Error(onboardResponse.data.error || 'UPI onboarding setup failed.');
+      }
+    } else {
+      throw new Error(response.data.error || 'Registration failed');
     }
   };
 
@@ -188,25 +290,8 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       
       if (credential?.user) {
         const idToken = await credential.user.getIdToken();
-        console.log('Firebase verified. Submitting registration to backend...');
-
-        const payload = {
-          idToken,
-          fullName,
-          email,
-          aadharNumber,
-          aadharImage,
-        };
-
-        const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
-        if (response.data.success) {
-          const { user } = response.data;
-          storage.setItem('userToken', idToken);
-          storage.setItem('userData', user);
-          onRegisterSuccess(idToken, user);
-        } else {
-          throw new Error(response.data.error || 'Registration failed');
-        }
+        console.log('Firebase verified. Proceeding to submit registration...');
+        await completeRegistrationFlow(idToken);
       }
     } catch (error: any) {
       console.error('Registration Verification Error:', error);
@@ -225,116 +310,207 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
         style={styles.container}
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
-            <ChevronLeft size={24} color={Colors.primary} strokeWidth={2.5} />
-            <Text style={styles.backText}>Back to Login</Text>
-          </TouchableOpacity>
+          {step === 1 ? (
+            <TouchableOpacity onPress={onBack} style={styles.backButton}>
+              <ChevronLeft size={24} color={Colors.primary} strokeWidth={2.5} />
+              <Text style={styles.backText}>Back to Login</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => setStep(step - 1)} style={styles.backButton}>
+              <ChevronLeft size={24} color={Colors.primary} strokeWidth={2.5} />
+              <Text style={styles.backText}>Back</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Stepper Progress */}
+          <View style={styles.stepperContainer}>
+            <Text style={styles.stepperText}>Step {step} of 3</Text>
+            <View style={styles.stepperBarBg}>
+              <View style={[styles.stepperBarFill, { width: `${(step / 3) * 100}%` }]} />
+            </View>
+          </View>
 
           <View style={styles.header}>
             <PageTitle>{isUpdate ? 'Complete Profile' : 'Join the Team'}</PageTitle>
             <PageSubtitle>
-              {isUpdate 
-                ? 'Provide your details to complete registration.' 
-                : 'Become a FreshRun delivery partner today.'}
+              {step === 1 
+                ? 'Provide your personal details for registration.' 
+                : step === 2 
+                ? 'Add bank details to receive split payouts.'
+                : 'Confirm your phone number to complete onboarding.'}
             </PageSubtitle>
           </View>
 
-          {!confirm ? (
-            <>
-              <View style={styles.inputSection}>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Full Name</Text>
+          {step === 1 && (
+            <View style={styles.inputSection}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Full Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter your full name"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  placeholderTextColor={Colors.textLight}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Email Address</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter your email"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  placeholderTextColor={Colors.textLight}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Phone Number</Text>
+                <View style={styles.phoneInputWrapper}>
+                  <Text style={styles.countryCode}>+91</Text>
                   <TextInput
-                    style={styles.textInput}
-                    placeholder="Enter your full name"
-                    value={fullName}
-                    onChangeText={setFullName}
+                    style={[styles.phoneInput, isUpdate && { color: Colors.textLight }]}
+                    placeholder="Enter phone number"
+                    value={phoneNumber}
+                    onChangeText={setPhoneNumber}
+                    keyboardType="phone-pad"
+                    maxLength={10}
                     placeholderTextColor={Colors.textLight}
+                    editable={!isUpdate}
                   />
                 </View>
+              </View>
 
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Email Address</Text>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Aadhar Number</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="12-digit Aadhar Number"
+                  value={aadharNumber}
+                  onChangeText={setAadharNumber}
+                  keyboardType="number-pad"
+                  maxLength={12}
+                  placeholderTextColor={Colors.textLight}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Aadhar Card Photo</Text>
+                {aadharImage ? (
+                  <View style={styles.imagePreviewContainer}>
+                    <Image source={{ uri: aadharImage }} style={styles.imagePreview} />
+                    <TouchableOpacity 
+                      style={styles.removeImageBtn}
+                      onPress={() => setAadharImage(null)}
+                    >
+                      <Trash2 size={16} color="#fff" />
+                      <Text style={styles.removeImageText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={styles.uploadButton} 
+                    onPress={handleSelectImage}
+                    disabled={uploading}
+                  >
+                    {uploading ? (
+                      <ActivityIndicator color={Colors.primary} />
+                    ) : (
+                      <>
+                        <Camera size={28} color={Colors.textLight} style={{ marginBottom: 8 }} />
+                        <Text style={styles.uploadText}>Upload Aadhar Image</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.nextButton, loading && styles.disabledButton]} 
+                onPress={handleNextStep1}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Text style={styles.nextButtonText}>Next: Bank Onboarding</Text>
+                    <ChevronRight size={20} color="#fff" />
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {step === 2 && (
+            <View style={styles.inputSection}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>UPI ID</Text>
+                <View style={styles.inputWrapper}>
+                  <User size={20} color={Colors.textLight} style={styles.inputIcon} />
                   <TextInput
                     style={styles.textInput}
-                    placeholder="Enter your email"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
+                    placeholder="Enter UPI ID (e.g. name@okicici)"
+                    value={upiId}
+                    onChangeText={setUpiId}
                     autoCapitalize="none"
                     placeholderTextColor={Colors.textLight}
                   />
                 </View>
-
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Phone Number</Text>
-                  <View style={styles.phoneInputWrapper}>
-                    <Text style={styles.countryCode}>+91</Text>
-                    <TextInput
-                      style={[styles.phoneInput, isUpdate && { color: Colors.textLight }]}
-                      placeholder="Enter phone number"
-                      value={phoneNumber}
-                      onChangeText={setPhoneNumber}
-                      keyboardType="phone-pad"
-                      maxLength={10}
-                      placeholderTextColor={Colors.textLight}
-                      editable={!isUpdate}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Aadhar Number</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="12-digit Aadhar Number"
-                    value={aadharNumber}
-                    onChangeText={setAadharNumber}
-                    keyboardType="number-pad"
-                    maxLength={12}
-                    placeholderTextColor={Colors.textLight}
-                  />
-                </View>
-
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Aadhar Card Photo</Text>
-                  {aadharImage ? (
-                    <View style={styles.imagePreviewContainer}>
-                      <Image source={{ uri: aadharImage }} style={styles.imagePreview} />
-                      <TouchableOpacity 
-                        style={styles.removeImageBtn}
-                        onPress={() => setAadharImage(null)}
-                      >
-                        <Trash2 size={16} color="#fff" />
-                        <Text style={styles.removeImageText}>Remove</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <TouchableOpacity 
-                      style={styles.uploadButton} 
-                      onPress={handleSelectImage}
-                      disabled={uploading}
-                    >
-                      {uploading ? (
-                        <ActivityIndicator color={Colors.primary} />
-                      ) : (
-                        <>
-                          <Camera size={28} color={Colors.textLight} style={{ marginBottom: 8 }} />
-                          <Text style={styles.uploadText}>Upload Aadhar Image</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                </View>
               </View>
 
-              <PrimaryButton 
-                title={loading ? (isUpdate ? "Updating..." : "Sending OTP...") : (isUpdate ? "Complete Registration" : "Register & Verify")}
-                onPress={handleRegister}
-                loading={loading}
-              />
-            </>
-          ) : (
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>UPI QR Code Image</Text>
+                {upiQrImage ? (
+                  <View style={styles.imagePreviewContainer}>
+                    <Image source={{ uri: upiQrImage }} style={styles.imagePreview} />
+                    <TouchableOpacity 
+                      style={styles.removeImageBtn} 
+                      onPress={() => setUpiQrImage(null)}
+                    >
+                      <Trash2 size={16} color="#fff" />
+                      <Text style={styles.removeImageText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={styles.uploadButton} 
+                    onPress={handleSelectQrImage}
+                    disabled={qrUploading}
+                  >
+                    {qrUploading ? (
+                      <ActivityIndicator color={Colors.primary} />
+                    ) : (
+                      <>
+                        <Camera size={24} color={Colors.primary} style={{ marginBottom: 8 }} />
+                        <Text style={styles.uploadText}>Upload UPI QR Code Image</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.nextButton, loading && styles.disabledButton]} 
+                onPress={handleNextStep2}
+                disabled={loading || qrUploading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Text style={styles.nextButtonText}>{isUpdate ? "Complete Registration" : "Next: Verify Phone"}</Text>
+                    <ChevronRight size={20} color="#fff" />
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {step === 3 && (
             <View style={styles.otpContainer}>
               <Text style={styles.otpLabel}>Verify your Phone Number</Text>
               <Text style={styles.otpSubtitle}>Enter the 6-digit code sent to +91 {phoneNumber}</Text>
@@ -359,10 +535,10 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
 
               <TouchableOpacity 
                 style={styles.resendBtn} 
-                onPress={() => setConfirm(null)}
+                onPress={() => setStep(2)}
                 disabled={loading}
               >
-                <Text style={styles.resendText}>Edit Phone Number?</Text>
+                <Text style={styles.resendText}>Edit details?</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -393,7 +569,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 25,
-    paddingTop: 40,
+    paddingTop: 30,
     paddingBottom: 40,
   },
   backButton: {
@@ -407,6 +583,27 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.medium,
     color: Colors.primary,
     marginLeft: 4,
+  },
+  stepperContainer: {
+    marginBottom: 20,
+  },
+  stepperText: {
+    fontSize: 13,
+    fontFamily: Fonts.bold,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  stepperBarBg: {
+    height: 6,
+    backgroundColor: Colors.border,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  stepperBarFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 3,
   },
   header: {
     marginBottom: 30,
@@ -424,15 +621,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: Fonts.regular,
+    color: Colors.text,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 15,
     paddingHorizontal: 15,
     height: 56,
-    fontSize: 16,
-    fontFamily: Fonts.regular,
-    color: Colors.text,
     backgroundColor: Colors.white,
+  },
+  inputIcon: {
+    marginRight: 12,
   },
   phoneInputWrapper: {
     flexDirection: 'row',
@@ -504,6 +709,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: Fonts.medium,
     marginLeft: 6,
+  },
+  nextButton: {
+    backgroundColor: Colors.primary,
+    height: 56,
+    borderRadius: 15,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 20,
+    gap: 6,
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  nextButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontFamily: Fonts.bold,
   },
   footer: {
     marginTop: 20,
