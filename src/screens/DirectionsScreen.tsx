@@ -13,6 +13,8 @@ import {
   Platform,
   Animated,
   PanResponder,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -67,6 +69,8 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [resolvedOrder, setResolvedOrder] = useState<any>(order);
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [enteredPin, setEnteredPin] = useState('');
 
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [directionsOrigin, setDirectionsOrigin] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -411,8 +415,19 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     }
   };
 
-  // 3. Mark as Delivered
-  const handleMarkDelivered = async () => {
+  // 3. Mark as Delivered (Opens PIN input modal)
+  const handleMarkDelivered = () => {
+    setPinModalVisible(true);
+  };
+
+  // 3b. Verify PIN and complete delivery
+  const submitDeliveryPin = async () => {
+    if (!enteredPin || enteredPin.length !== 6) {
+      Alertt.alert('Error', 'Please enter a valid 6-digit PIN.');
+      return;
+    }
+
+    setPinModalVisible(false);
     setActionLoading(true);
     try {
       const response = await fetch(`${BACKEND_URL}/orders/${order.id}`, {
@@ -424,11 +439,13 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
         body: JSON.stringify({
           status: 'delivered',
           is_completed: true,
+          delivery_pin: enteredPin,
         }),
       });
 
       const result = await response.json();
       if (response.ok && result.success) {
+        setEnteredPin('');
         Alertt.alert('🎉 Delivered', 'Great job! Order completed successfully.', [
           {
             text: 'OK',
@@ -442,7 +459,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           },
         ]);
       } else {
-        Alertt.alert('Error', result.error || 'Failed to complete order.');
+        Alertt.alert('Verification Failed', result.error || 'Failed to complete order.');
       }
     } catch (error) {
       console.error('[DirectionsScreen] Delivery error:', error);
@@ -752,6 +769,56 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
         onAccept={handleDisclosureAccept}
         onDecline={handleDisclosureDecline}
       />
+
+      <Modal
+        visible={pinModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setPinModalVisible(false);
+          setEnteredPin('');
+        }}
+      >
+        <View style={styles.pinModalOverlay}>
+          <View style={styles.pinModalContent}>
+            <Text style={styles.pinModalTitle}>Enter Delivery PIN</Text>
+            <Text style={styles.pinModalMessage}>
+              Ask the customer for the 6-digit verification PIN to complete this delivery.
+            </Text>
+            
+            <View style={styles.pinInputWrapper}>
+              <TextInput
+                style={styles.pinTextInput}
+                placeholder="0 0 0 0 0 0"
+                value={enteredPin}
+                onChangeText={setEnteredPin}
+                keyboardType="number-pad"
+                maxLength={6}
+                placeholderTextColor={Colors.textLight}
+              />
+            </View>
+
+            <View style={styles.pinModalButtons}>
+              <TouchableOpacity 
+                style={[styles.pinModalButton, styles.pinModalCancelButton]} 
+                onPress={() => {
+                  setPinModalVisible(false);
+                  setEnteredPin('');
+                }}
+              >
+                <Text style={styles.pinModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.pinModalButton, styles.pinModalSubmitButton]} 
+                onPress={submitDeliveryPin}
+              >
+                <Text style={styles.pinModalSubmitText}>Verify PIN</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1105,6 +1172,85 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Fonts.bold,
     color: Colors.textLight,
+  },
+  pinModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pinModalContent: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  pinModalTitle: {
+    fontSize: 18,
+    fontFamily: Fonts.bold,
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  pinModalMessage: {
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  pinInputWrapper: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 52,
+    backgroundColor: '#f9f9f9',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  pinTextInput: {
+    fontSize: 18,
+    fontFamily: Fonts.bold,
+    color: Colors.text,
+    textAlign: 'center',
+    letterSpacing: 4,
+  },
+  pinModalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+  },
+  pinModalButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 6,
+  },
+  pinModalCancelButton: {
+    backgroundColor: '#f5f5f5',
+  },
+  pinModalCancelText: {
+    fontSize: 14,
+    fontFamily: Fonts.semiBold,
+    color: Colors.textSecondary,
+  },
+  pinModalSubmitButton: {
+    backgroundColor: Colors.primary,
+  },
+  pinModalSubmitText: {
+    fontSize: 14,
+    fontFamily: Fonts.bold,
+    color: '#fff',
   },
 });
 
