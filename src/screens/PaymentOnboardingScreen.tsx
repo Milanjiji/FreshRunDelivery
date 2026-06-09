@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   StatusBar,
   Switch,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Landmark, CreditCard, User, Info, Camera, Trash2 } from 'lucide-react-native';
