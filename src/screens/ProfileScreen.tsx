@@ -281,7 +281,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
 
         <View style={styles.menuCard}>
           {[
-            { id: 'about', icon: <Info size={20} color="#333" />, label: 'About FreshRun' },
+            { id: 'about', icon: <Info size={20} color="#333" />, label: 'About FreshRush' },
             { id: 'privacy', icon: <ShieldCheck size={20} color="#333" />, label: 'Privacy Policy' },
             { id: 'terms', icon: <FileText size={20} color="#333" />, label: 'Terms & Conditions' },
             { id: 'refund', icon: <History size={20} color="#333" />, label: 'Refund Policy' },
@@ -316,7 +316,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
 
-        <Text style={styles.versionText}>FreshRun Delivery Partner v1.0</Text>
+        <Text style={styles.versionText}>FreshRush Delivery Partner v1.0</Text>
       </ScrollView>
     </SafeAreaView>
   );

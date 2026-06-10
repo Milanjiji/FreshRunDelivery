@@ -249,7 +249,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>New to FreshRun? </Text>
+            <Text style={styles.footerText}>New to FreshRush? </Text>
             <TouchableOpacity onPress={onNavigateToRegister}>
               <Text style={styles.linkText}>Become a Partner</Text>
             </TouchableOpacity>

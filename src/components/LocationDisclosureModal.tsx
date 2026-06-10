@@ -38,7 +38,7 @@ const LocationDisclosureModal: React.FC<LocationDisclosureModalProps> = ({
           </View>
           <Text style={styles.title}>Live Location Tracking</Text>
           <Text style={styles.message}>
-            FreshRun Delivery collects location data to enable real-time order tracking for customers 
+            FreshRush Delivery collects location data to enable real-time order tracking for customers 
             and to calculate delivery payouts, even when the app is closed or not in use during an active delivery.
           </Text>
           <View style={styles.buttonRow}>

@@ -420,7 +420,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
                       {activeTab === 'pickups' ? 'Pickup Location' : 'Customer Name'}
                     </Text>
                     <Text style={styles.value} numberOfLines={1}>
-                      {activeTab === 'pickups' ? (item.store_name || 'FreshRun Store') : (item.user_name || 'Customer')}
+                      {activeTab === 'pickups' ? (item.store_name || 'FreshRush Store') : (item.user_name || 'Customer')}
                     </Text>
                     <View style={styles.addressRow}>
                       <MapPin size={12} color={Colors.textLight} style={{ marginRight: 4, marginTop: 2 }} />

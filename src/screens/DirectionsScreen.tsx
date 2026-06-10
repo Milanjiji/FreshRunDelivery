@@ -138,7 +138,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       {
         title: 'Delivery Location Permission',
-        message: 'FreshRun needs your location while this screen is open to update the customer during delivery.',
+        message: 'FreshRush needs your location while this screen is open to update the customer during delivery.',
         buttonNeutral: 'Ask Me Later',
         buttonNegative: 'Cancel',
         buttonPositive: 'OK',
@@ -663,7 +663,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
                 <ShoppingBag size={20} color={Colors.primary} />
               </View>
               <View style={styles.cardDetails}>
-                <Text style={styles.cardMainText}>{orderData.store_name || 'FreshRun Partner Store'}</Text>
+                <Text style={styles.cardMainText}>{orderData.store_name || 'FreshRush Partner Store'}</Text>
                 <View style={styles.addressRow}>
                   <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
                   <Text style={styles.cardSubText}>{orderData.store_address || 'Store location address line'}</Text>
