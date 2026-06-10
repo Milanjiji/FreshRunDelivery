@@ -67,5 +67,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>CodePushDeploymentKey</key>
+	<!-- Staging: Cpu_vZ1tF_hPNSsjoLSQ3vqLzU714yGGSh3g4g -->
+	<!-- Production: iDvFBWib4lFvC5j-xGL6IexLyyZG4yGGSh3g4g -->
+	<string>Cpu_vZ1tF_hPNSsjoLSQ3vqLzU714yGGSh3g4g</string>
+	<key>CodePushServerURL</key>
+	<string>https://api.revopush.org</string>
 </dict>
 </plist>
