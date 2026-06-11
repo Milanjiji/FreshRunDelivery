@@ -86,8 +86,9 @@ const MyDeliveriesScreen: React.FC<MyDeliveriesScreenProps> = ({ userToken, onBa
     const fee = parseFloat(item.delivery_fee) || 0;
     const rainySurge = parseFloat(item.rainy_surge_fee) || 0;
     const lateNight = parseFloat(item.late_night_fee) || 0;
+    const extraStoreCharge = parseFloat(item.extra_store_charge) || 0;
     const tip = parseFloat(item.delivery_tip) || 0;
-    const earnings = fee + rainySurge + lateNight + tip;
+    const earnings = fee + rainySurge + lateNight + extraStoreCharge + tip;
     const isCompleted = item.is_completed;
     const isCancelled = item.status === 'cancelled' || item.status === 'declined';
 
@@ -151,6 +152,7 @@ const MyDeliveriesScreen: React.FC<MyDeliveriesScreenProps> = ({ userToken, onBa
             <Text style={styles.breakdownText}>Fee: ₹{fee.toFixed(0)}</Text>
             {rainySurge > 0 && <Text style={styles.breakdownText}> • Rainy: ₹{rainySurge.toFixed(0)}</Text>}
             {lateNight > 0 && <Text style={styles.breakdownText}> • Late: ₹{lateNight.toFixed(0)}</Text>}
+            {extraStoreCharge > 0 && <Text style={styles.breakdownText}> • Extra Store: ₹{extraStoreCharge.toFixed(0)}</Text>}
             {tip > 0 && <Text style={styles.breakdownText}> • Tip: ₹{tip.toFixed(0)}</Text>}
           </View>
         )}

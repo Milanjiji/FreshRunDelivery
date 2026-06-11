@@ -19,7 +19,7 @@ import {
 import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Geolocation from '@react-native-community/geolocation';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import io from 'socket.io-client';
 import {
@@ -31,6 +31,7 @@ import {
   CheckCircle,
   IndianRupee
 } from 'lucide-react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { Fonts } from '../theme/typography';
 import { Colors } from '../theme/colors';
 
@@ -71,6 +72,9 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const [resolvedOrder, setResolvedOrder] = useState<any>(order);
   const [pinModalVisible, setPinModalVisible] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
+  const [issueModalVisible, setIssueModalVisible] = useState(false);
+  const [selectedIssueType, setSelectedIssueType] = useState<'damaged_item' | 'customer_rejected' | 'customer_refused_other'>('customer_rejected');
+  const [issueComment, setIssueComment] = useState('');
 
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [directionsOrigin, setDirectionsOrigin] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -85,14 +89,14 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onPanResponderMove: (evt, gestureState) => {
+      onPanResponderMove: (_evt, gestureState) => {
         const newHeight = lastSheetHeight.current - gestureState.dy;
         // Limit height between 20% and 85% of screen
         if (newHeight > SCREEN_HEIGHT * 0.2 && newHeight < SCREEN_HEIGHT * 0.85) {
           sheetHeight.setValue(newHeight);
         }
       },
-      onPanResponderRelease: (evt, gestureState) => {
+      onPanResponderRelease: (_evt, _gestureState) => {
         // Sync raw value for next interaction
         lastSheetHeight.current = (sheetHeight as any)._value;
       },
@@ -237,7 +241,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
         Geolocation.clearWatch(watchId);
       }
     };
-  }, [localCompleted, localStatus, order.id, permissionGranted]);
+  }, [directionsOrigin, localCompleted, localStatus, order.id, permissionGranted]);
 
   const handleDisclosureAccept = async () => {
     setShowDisclosure(false);
@@ -312,9 +316,18 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     }
     
     // Always fit the Store and Customer in the view so the whole path is visible
-    if (storeLat !== null && storeLng !== null) {
+    if (orderData?.stores && orderData.stores.length > 0) {
+      orderData.stores.forEach((s: any) => {
+        const sLat = parseCoordinate(s.latitude);
+        const sLng = parseCoordinate(s.longitude);
+        if (sLat !== null && sLng !== null) {
+          coords.push({ latitude: sLat, longitude: sLng });
+        }
+      });
+    } else if (storeLat !== null && storeLng !== null) {
         coords.push({ latitude: storeLat, longitude: storeLng });
     }
+    
     if (userLat !== null && userLng !== null) {
         coords.push({ latitude: userLat, longitude: userLng });
     }
@@ -325,7 +338,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
         animated: true,
       });
     }
-  }, [currentLocation, mapReady, storeLat, storeLng, userLat, userLng]);
+  }, [currentLocation, mapReady, storeLat, storeLng, userLat, userLng, orderData?.stores]);
 
   useEffect(() => {
     fitMapToMarkers();
@@ -415,6 +428,41 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     }
   };
 
+  // 2b. Mark specific store as Picked Up
+  const handlePickUpStore = async (storeId: string, storeName: string) => {
+    setActionLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/orders/${order.id}/pickup-store`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify({ store_id: storeId }),
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        Alertt.alert('Store Picked Up', `Items from "${storeName}" marked as picked up.`, [
+          {
+            text: 'OK',
+            onPress: () => {
+              fetchOrderDetails();
+              onRefresh();
+            }
+          }
+        ]);
+      } else {
+        Alertt.alert('Error', result.error || 'Failed to update store pickup.');
+      }
+    } catch (error) {
+      console.error('[DirectionsScreen] Store pick-up error:', error);
+      Alertt.alert('Error', 'Unable to reach server. Please try again.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // 3. Mark as Delivered (Opens PIN input modal)
   const handleMarkDelivered = () => {
     setPinModalVisible(true);
@@ -479,8 +527,116 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
     }
   };
 
+  // Raise Active Issue (damaged item or customer rejection on site)
+  const handleRaiseActiveIssue = async () => {
+    if (!issueComment.trim()) {
+      Alertt.alert('Comment Required', 'Please provide a short description of the issue.');
+      return;
+    }
+
+    setIssueModalVisible(false);
+    setActionLoading(true);
+    try {
+      const payload = {
+        driver_issue_status: selectedIssueType,
+        driver_issue_description: issueComment.trim(),
+        return_to_store_status: 'pending'
+      };
+
+      const response = await fetch(`${BACKEND_URL}/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${userToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        Alertt.alert('⚠️ Issue Raised', 'Please return the items back to the store. The navigation route has been updated.', [
+          {
+            text: 'OK',
+            onPress: () => {
+              setIssueComment('');
+              fetchOrderDetails();
+              onRefresh();
+            },
+          },
+        ]);
+      } else {
+        Alertt.alert('Error', result.error || 'Failed to report issue.');
+      }
+    } catch (error) {
+      console.error('[DirectionsScreen] Raise issue error:', error);
+      Alertt.alert('Error', 'Unable to update order issue details.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Confirm Return to Store
+  const handleConfirmReturn = async () => {
+    Alertt.alert(
+      'Confirm Return',
+      'Confirm that you have returned the items to the merchant at the store.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Return',
+          onPress: async () => {
+            setActionLoading(true);
+            try {
+              const payload = {
+                return_to_store_status: 'returned',
+                status: 'cancelled',
+                is_completed: true
+              };
+
+              const response = await fetch(`${BACKEND_URL}/orders/${order.id}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${userToken}`,
+                },
+                body: JSON.stringify(payload),
+              });
+
+              const result = await response.json();
+              if (response.ok && result.success) {
+                Alertt.alert('Success', 'Return completed. You can now accept other orders.', [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      fetchOrderDetails();
+                      onRefresh();
+                      onBack();
+                    },
+                  },
+                ]);
+              } else {
+                Alertt.alert('Error', result.error || 'Failed to complete return.');
+              }
+            } catch (error) {
+              console.error('[DirectionsScreen] Return confirmation error:', error);
+              Alertt.alert('Error', 'Unable to reach server. Please try again.');
+            } finally {
+              setActionLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // Status mapping display (title shown in bottom panel)
   const getStatusDisplay = () => {
+    if (orderData.driver_issue_status) {
+      if (orderData.return_to_store_status === 'returned') {
+        return 'Returned to Store';
+      }
+      return 'Returning to Store';
+    }
     if (localCompleted || localStatus === 'delivered') return 'Order Delivered';
     if (localStatus === 'out_for_delivery') return 'Out for Delivery';
     if (orderData?.is_packed || localStatus === 'packed') return 'Order Packed';
@@ -489,15 +645,23 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
   // Sub-description beneath the title
   const getStatusDescription = () => {
+    if (orderData.driver_issue_status) {
+      if (orderData.return_to_store_status === 'returned') {
+        return 'Incorrect/rejected items have been returned to the merchant.';
+      }
+      return `Issue raised: ${orderData.driver_issue_description || 'Return route active'}. Return incorrect items to the store.`;
+    }
     if (localCompleted || localStatus === 'delivered') return 'The order has been successfully delivered to the customer.';
     if (localStatus === 'out_for_delivery') return 'Order is out for delivery. Head to the customer address.';
     if (orderData?.is_packed || localStatus === 'packed') return 'Order is packed and ready. Proceed to the store for pickup.';
     return 'Order confirmed by store and is currently being processed.';
   };
 
-  const boxesCount =
-    orderData?.items?.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0) || 1;
-  const weightVal = (boxesCount * 0.8).toFixed(1) + 'kgs';
+
+
+  const allStoresPickedUp = orderData?.stores && orderData.stores.length > 0
+    ? orderData.stores.every((s: any) => (orderData.picked_up_stores || []).includes(s.id))
+    : true;
 
   return (
     <View style={styles.container}>
@@ -529,12 +693,32 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               </Marker>
             )}
 
-            <Marker
-              coordinate={{ latitude: storeLat, longitude: storeLng }}
-              title="Pickup Store"
-              description={orderData?.store_name}
-              pinColor={Colors.secondary}
-            />
+            {orderData?.stores && orderData.stores.length > 0 ? (
+              orderData.stores.map((s: any) => {
+                const sLat = parseCoordinate(s.latitude);
+                const sLng = parseCoordinate(s.longitude);
+                if (sLat === null || sLng === null) return null;
+                const isPicked = (orderData.picked_up_stores || []).includes(s.id);
+                return (
+                  <Marker
+                    key={s.id}
+                    coordinate={{ latitude: sLat, longitude: sLng }}
+                    title={`Pickup Store: ${s.name}`}
+                    description={s.address_line}
+                    pinColor={isPicked ? '#aaa' : Colors.secondary}
+                  />
+                );
+              })
+            ) : (
+              storeLat !== null && storeLng !== null && (
+                <Marker
+                  coordinate={{ latitude: storeLat, longitude: storeLng }}
+                  title="Pickup Store"
+                  description={orderData?.store_name}
+                  pinColor={Colors.secondary}
+                />
+              )
+            )}
 
             {userLat !== null && userLng !== null && (
               <Marker
@@ -545,19 +729,30 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               />
             )}
 
-            {directionsOrigin && userLat !== null && userLng !== null && (
+            {directionsOrigin && (
               <MapViewDirections
-                key={`${localStatus}-${localGivenToDelivery}`}
+                key={`${localStatus}-${localGivenToDelivery}-${orderData.driver_issue_status}-${orderData.picked_up_stores?.length || 0}`}
                 origin={directionsOrigin}
-                destination={{ latitude: userLat, longitude: userLng }}
+                destination={
+                  (orderData.driver_issue_status && orderData.return_to_store_status !== 'returned' && storeLat !== null && storeLng !== null)
+                    ? { latitude: storeLat, longitude: storeLng }
+                    : (userLat !== null && userLng !== null)
+                      ? { latitude: userLat, longitude: userLng }
+                      : (storeLat !== null && storeLng !== null ? { latitude: storeLat, longitude: storeLng } : directionsOrigin)
+                }
                 waypoints={
-                   (!localGivenToDelivery && storeLat !== null && storeLng !== null) 
-                    ? [{ latitude: storeLat, longitude: storeLng }] 
+                  (!localGivenToDelivery && !orderData.driver_issue_status)
+                    ? (orderData?.stores && orderData.stores.length > 0
+                        ? orderData.stores
+                            .filter((s: any) => !(orderData.picked_up_stores || []).includes(s.id))
+                            .map((s: any) => ({ latitude: parseFloat(s.latitude), longitude: parseFloat(s.longitude) }))
+                        : (storeLat !== null && storeLng !== null ? [{ latitude: storeLat, longitude: storeLng }] : [])
+                      )
                     : []
                 }
                 apikey={GOOGLE_MAPS_APIKEY}
                 strokeWidth={4}
-                strokeColor={Colors.primary}
+                strokeColor={orderData.driver_issue_status ? Colors.error : Colors.primary}
                 optimizeWaypoints={!localGivenToDelivery}
                 onReady={result => {
                   console.log(`[Directions] Dist: ${result.distance}km, Dur: ${result.duration}min`);
@@ -657,19 +852,53 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
           <View style={styles.divider} />
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pickup Point</Text>
-            <View style={styles.card}>
-              <View style={styles.cardIconCircle}>
-                <ShoppingBag size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.cardDetails}>
-                <Text style={styles.cardMainText}>{orderData.store_name || 'FreshRush Partner Store'}</Text>
-                <View style={styles.addressRow}>
-                  <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
-                  <Text style={styles.cardSubText}>{orderData.store_address || 'Store location address line'}</Text>
+            <Text style={styles.sectionTitle}>Pickup Points</Text>
+            {orderData.stores && orderData.stores.length > 0 ? (
+              orderData.stores.map((s: any, idx: number) => {
+                const isPicked = (orderData.picked_up_stores || []).includes(s.id);
+                return (
+                  <View key={s.id || idx} style={[styles.card, { marginBottom: 10 }]}>
+                    <View style={[styles.cardIconCircle, isPicked && { backgroundColor: '#e2f2e6' }]}>
+                      <ShoppingBag size={20} color={isPicked ? Colors.success : Colors.primary} />
+                    </View>
+                    <View style={styles.cardDetails}>
+                      <Text style={styles.cardMainText}>{s.name || 'FreshRush Partner Store'}</Text>
+                      <View style={styles.addressRow}>
+                        <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
+                        <Text style={styles.cardSubText}>{s.address_line || 'Store location address line'}</Text>
+                      </View>
+                    </View>
+                    {localOpted && !localGivenToDelivery && (
+                      isPicked ? (
+                        <View style={[styles.phoneBtn, { backgroundColor: '#e2f2e6', borderWidth: 1, borderColor: Colors.success }]}>
+                          <Icon name="checkmark" size={18} color={Colors.success} />
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={[styles.phoneBtn, { backgroundColor: Colors.secondary }]}
+                          onPress={() => handlePickUpStore(s.id, s.name)}
+                        >
+                          <Icon name="checkmark-done" size={18} color="#fff" />
+                        </TouchableOpacity>
+                      )
+                    )}
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.card}>
+                <View style={styles.cardIconCircle}>
+                  <ShoppingBag size={20} color={Colors.primary} />
+                </View>
+                <View style={styles.cardDetails}>
+                  <Text style={styles.cardMainText}>{orderData.store_name || 'FreshRush Partner Store'}</Text>
+                  <View style={styles.addressRow}>
+                    <MapPin size={12} color={Colors.textSecondary} style={{ marginRight: 4, marginTop: 2 }} />
+                    <Text style={styles.cardSubText}>{orderData.store_address || 'Store location address line'}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -704,6 +933,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
                    {((parseFloat(orderData.delivery_fee) || 0) + 
                      (parseFloat(orderData.rainy_surge_fee) || 0) + 
                      (parseFloat(orderData.late_night_fee) || 0) + 
+                     (parseFloat(orderData.extra_store_charge) || 0) + 
                      (parseFloat(orderData.delivery_tip) || 0)).toFixed(0)}
                  </Text>
               </View>
@@ -711,6 +941,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
                  <Text style={styles.breakdownItem}>Fee: ₹{(parseFloat(orderData.delivery_fee) || 0).toFixed(0)}</Text>
                  {parseFloat(orderData.rainy_surge_fee) > 0 && <Text style={styles.breakdownItem}>Rainy: ₹{(parseFloat(orderData.rainy_surge_fee) || 0).toFixed(0)}</Text>}
                  {parseFloat(orderData.late_night_fee) > 0 && <Text style={styles.breakdownItem}>Late: ₹{(parseFloat(orderData.late_night_fee) || 0).toFixed(0)}</Text>}
+                 {parseFloat(orderData.extra_store_charge) > 0 && <Text style={styles.breakdownItem}>Extra Store: ₹{(parseFloat(orderData.extra_store_charge) || 0).toFixed(0)}</Text>}
                  {parseFloat(orderData.delivery_tip) > 0 && <Text style={styles.breakdownItem}>Tip: ₹{(parseFloat(orderData.delivery_tip) || 0).toFixed(0)}</Text>}
               </View>
             </View>
@@ -747,15 +978,47 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
               <Text style={styles.mainActionBtnText}>Accept Pickup</Text>
             </TouchableOpacity>
           ) : !localGivenToDelivery ? (
-            <TouchableOpacity style={[styles.mainActionBtn, { backgroundColor: Colors.secondary }]} onPress={handleMarkPickedUp}>
+            <TouchableOpacity 
+              style={[
+                styles.mainActionBtn, 
+                { backgroundColor: allStoresPickedUp ? Colors.secondary : '#cccccc' }
+              ]} 
+              onPress={handleMarkPickedUp}
+              disabled={!allStoresPickedUp}
+            >
               <Truck size={18} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.mainActionBtnText}>Mark as Picked Up</Text>
+              <Text style={styles.mainActionBtnText}>
+                {allStoresPickedUp ? 'Mark as Picked Up' : 'Pick up all stores first'}
+              </Text>
+            </TouchableOpacity>
+          ) : (orderData.driver_issue_status && orderData.return_to_store_status !== 'returned') ? (
+            <TouchableOpacity 
+              style={[styles.mainActionBtn, { backgroundColor: Colors.secondary }]} 
+              onPress={handleConfirmReturn}
+            >
+              <Icon name="storefront-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.mainActionBtnText}>Confirm Return to Store</Text>
             </TouchableOpacity>
           ) : !localCompleted ? (
-            <TouchableOpacity style={[styles.mainActionBtn, { backgroundColor: Colors.success }]} onPress={handleMarkDelivered}>
-              <CheckCircle size={18} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.mainActionBtnText}>Mark as Delivered</Text>
-            </TouchableOpacity>
+            <View style={{ gap: 10 }}>
+              <TouchableOpacity 
+                style={[styles.mainActionBtn, { backgroundColor: Colors.success }]} 
+                onPress={handleMarkDelivered}
+              >
+                <CheckCircle size={18} color="#fff" style={{ marginRight: 8 }} />
+                <Text style={styles.mainActionBtnText}>Mark as Delivered</Text>
+              </TouchableOpacity>
+              
+              {localGivenToDelivery && (
+                <TouchableOpacity 
+                  style={[styles.mainActionBtn, { backgroundColor: Colors.error }]} 
+                  onPress={() => setIssueModalVisible(true)}
+                >
+                  <Icon name="alert-circle-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.mainActionBtnText}>Raise Active Issue</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           ) : (
             <View style={styles.completedBadge}>
               <Text style={styles.completedBadgeText}>Completed</Text>
@@ -814,6 +1077,75 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
                 onPress={submitDeliveryPin}
               >
                 <Text style={styles.pinModalSubmitText}>Verify PIN</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={issueModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setIssueModalVisible(false);
+          setIssueComment('');
+        }}
+      >
+        <View style={styles.pinModalOverlay}>
+          <View style={styles.pinModalContent}>
+            <Text style={styles.pinModalTitle}>Report Delivery Issue</Text>
+            <Text style={styles.pinModalMessage}>
+              Select the type of issue you encountered on site.
+            </Text>
+
+            <View style={styles.issueTypeWrapper}>
+              {(['customer_rejected', 'damaged_item', 'customer_refused_other'] as const).map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.issueTypeBtn,
+                    selectedIssueType === type && styles.issueTypeBtnActive
+                  ]}
+                  onPress={() => setSelectedIssueType(type)}
+                >
+                  <Text style={[
+                    styles.issueTypeBtnText,
+                    selectedIssueType === type && styles.issueTypeBtnTextActive
+                  ]}>
+                    {type === 'customer_rejected' && 'Incorrect items (Customer rejected)'}
+                    {type === 'damaged_item' && 'Damaged packaging/item'}
+                    {type === 'customer_refused_other' && 'Refused delivery (Other reason)'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={styles.issueTextInput}
+              placeholder="Describe the issue in detail..."
+              value={issueComment}
+              onChangeText={setIssueComment}
+              multiline
+              placeholderTextColor={Colors.textLight}
+            />
+
+            <View style={styles.pinModalButtons}>
+              <TouchableOpacity 
+                style={[styles.pinModalButton, styles.pinModalCancelButton]} 
+                onPress={() => {
+                  setIssueModalVisible(false);
+                  setIssueComment('');
+                }}
+              >
+                <Text style={styles.pinModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.pinModalButton, styles.pinModalSubmitButton, { backgroundColor: Colors.error }]} 
+                onPress={handleRaiseActiveIssue}
+              >
+                <Text style={styles.pinModalSubmitText}>Submit Issue</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1251,6 +1583,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Fonts.bold,
     color: '#fff',
+  },
+  issueTypeWrapper: {
+    width: '100%',
+    gap: 8,
+    marginBottom: 15,
+  },
+  issueTypeBtn: {
+    width: '100%',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    backgroundColor: '#f9f9f9',
+  },
+  issueTypeBtnActive: {
+    borderColor: Colors.error,
+    backgroundColor: '#FFF5F5',
+  },
+  issueTypeBtnText: {
+    fontSize: 13,
+    fontFamily: Fonts.medium,
+    color: Colors.textSecondary,
+  },
+  issueTypeBtnTextActive: {
+    color: Colors.error,
+    fontFamily: Fonts.bold,
+  },
+  issueTextInput: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    height: 80,
+    backgroundColor: '#f9f9f9',
+    color: Colors.text,
+    fontSize: 14,
+    fontFamily: Fonts.regular,
+    textAlignVertical: 'top',
+    marginBottom: 20,
   },
 });
 

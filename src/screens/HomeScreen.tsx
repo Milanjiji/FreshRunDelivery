@@ -385,8 +385,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
             const fee = parseFloat(item.delivery_fee) || 0;
             const rainySurge = parseFloat(item.rainy_surge_fee) || 0;
             const lateNight = parseFloat(item.late_night_fee) || 0;
+            const extraStoreCharge = parseFloat(item.extra_store_charge) || 0;
             const tip = parseFloat(item.delivery_tip) || 0;
-            const totalEarning = fee + rainySurge + lateNight + tip;
+            const totalEarning = fee + rainySurge + lateNight + extraStoreCharge + tip;
 
             return (
               <TouchableOpacity 
@@ -440,6 +441,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
                        <Text style={styles.breakdownItem}>Fee: ₹{fee.toFixed(0)}</Text>
                        {rainySurge > 0 && <Text style={styles.breakdownItem}>Rainy: ₹{rainySurge.toFixed(0)}</Text>}
                        {lateNight > 0 && <Text style={styles.breakdownItem}>Late: ₹{lateNight.toFixed(0)}</Text>}
+                       {extraStoreCharge > 0 && <Text style={styles.breakdownItem}>Extra Store: ₹{extraStoreCharge.toFixed(0)}</Text>}
                        {tip > 0 && <Text style={styles.breakdownItem}>Tip: ₹{tip.toFixed(0)}</Text>}
                     </View>
                   </View>

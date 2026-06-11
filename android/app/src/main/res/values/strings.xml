@@ -3,6 +3,6 @@
     <string name="google_maps_key">AIzaSyC1s78p6_QNfF7eoMbKnMcu5wLqOdLyN9g</string>
     <!-- Staging: Bo9qKHXAj0LUQNeCJ9I0S2Jq6rqt4yGGSh3g4g -->
     <!-- Production: CKWLBgJ1aATE0uUsJPURnqqTN1od4yGGSh3g4g -->
-    <string name="CodePushDeploymentKey" translatable="false">Bo9qKHXAj0LUQNeCJ9I0S2Jq6rqt4yGGSh3g4g</string>
+    <string name="CodePushDeploymentKey" translatable="false">CKWLBgJ1aATE0uUsJPURnqqTN1od4yGGSh3g4g</string>
     <string name="CodePushServerUrl" translatable="false">https://api.revopush.org</string>
 </resources>
