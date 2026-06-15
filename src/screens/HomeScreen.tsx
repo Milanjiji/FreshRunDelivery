@@ -33,6 +33,8 @@ import MyDeliveriesScreen from './MyDeliveriesScreen';
 import DirectionsScreen from './DirectionsScreen';
 import DebugMapScreen from './DebugMapScreen';
 import InfoScreen, { InfoType } from './InfoScreen';
+import HelpScreen from './HelpScreen';
+import TicketDetailsScreen from './TicketDetailsScreen';
 
 import { API_BASE_URL } from '../config/api';
 
@@ -54,6 +56,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
   const [showMyDeliveries, setShowMyDeliveries] = useState(false);
   const [showInfo, setShowInfo] = useState<InfoType | null>(null);
   const [showDebugMap, setShowDebugMap] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | number | null>(null);
+  const [preAttachedHelpOrder, setPreAttachedHelpOrder] = useState<any>(null);
 
   // Dynamic state loaded from the backend APIs
   const [pickups, setPickups] = useState<any[]>([]);
@@ -178,6 +183,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
         }
       };
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userToken, deliveries.length, fetchBoth]);
 
   // If Directions screen is overlayed
@@ -214,6 +220,37 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
     );
   }
 
+  if (selectedTicketId) {
+    return (
+      <TicketDetailsScreen
+        ticketId={selectedTicketId}
+        userToken={userToken || ''}
+        onBack={() => {
+          setSelectedTicketId(null);
+          setShowHelp(true);
+        }}
+      />
+    );
+  }
+
+  if (showHelp) {
+    return (
+      <HelpScreen
+        userToken={userToken || ''}
+        preAttachedOrder={preAttachedHelpOrder}
+        onBack={() => {
+          setShowHelp(false);
+          setPreAttachedHelpOrder(null);
+          setShowProfile(true);
+        }}
+        onViewTicketDetails={(ticketId) => {
+          setShowHelp(false);
+          setSelectedTicketId(ticketId);
+        }}
+      />
+    );
+  }
+
   if (showProfile) {
     return (
       <ProfileScreen
@@ -224,6 +261,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
         onMyDeliveriesPress={() => {
           setShowProfile(false);
           setShowMyDeliveries(true);
+        }}
+        onHelpPress={() => {
+          setShowProfile(false);
+          setShowHelp(true);
         }}
       />
     );

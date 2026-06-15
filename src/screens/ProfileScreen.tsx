@@ -43,7 +43,7 @@ import { storage } from '../utils/storage';
 
 const PRIVACY_POLICY_URL = 'https://freshrun-admin.vercel.app/privacy';
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogout, onInfoPress, onMyDeliveriesPress }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogout, onInfoPress, onMyDeliveriesPress, onHelpPress }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [aadharExpanded, setAadharExpanded] = useState(false);
 
@@ -105,7 +105,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
     { id: 'q1', icon: <Package size={24} color="#333" />, label: 'My\nDeliveries', onPress: onMyDeliveriesPress },
     { id: 'q2', icon: <Star size={24} color="#333" />, label: 'Ratings' },
     { id: 'q3', icon: <Wallet size={24} color="#333" />, label: 'Earnings' },
-    { id: 'q4', icon: <LifeBuoy size={24} color="#333" />, label: 'Support' },
+    { id: 'q4', icon: <LifeBuoy size={24} color="#333" />, label: 'Support', onPress: () => onHelpPress && onHelpPress() },
   ];
 
   return (
@@ -118,7 +118,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
           <ChevronLeft size={24} color="#333" strokeWidth={2.5} />
         </TouchableOpacity>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.helpButton}>
+          <TouchableOpacity style={styles.helpButton} onPress={() => onHelpPress && onHelpPress()}>
             <Text style={styles.helpText}>Help</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)}>
@@ -328,6 +328,7 @@ interface ProfileScreenProps {
   onLogout: () => void;
   onInfoPress: (type: 'about' | 'privacy' | 'terms' | 'refund' | 'shipping' | 'contact') => void;
   onMyDeliveriesPress?: () => void;
+  onHelpPress?: () => void;
 }
 
 const styles = StyleSheet.create({
