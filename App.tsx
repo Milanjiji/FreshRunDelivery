@@ -51,14 +51,24 @@ appCheck().initializeAppCheck({
 // Disable browser-based reCAPTCHA by forcing Play Integrity
 auth().settings.appVerificationDisabledForTesting = false;
 
-// Intercept global fetch to automatically inject a fresh Firebase ID token
+// Intercept global fetch to automatically inject a fresh Firebase ID token.
+// We use getIdToken(false) which returns the cached token if still valid, or
+// automatically refreshes it if expired — without forcing a new token every
+// call (which would re-trigger onIdTokenChanged and cascade re-renders).
 const originalFetch = global.fetch;
 global.fetch = async (input, init) => {
   if (typeof input === 'string' && input.startsWith(API_BASE_URL)) {
     try {
       const currentUser = auth().currentUser;
       if (currentUser) {
-        const token = await currentUser.getIdToken(false);
+        let token: string;
+        try {
+          // false = use cached token; Firebase auto-refreshes when near expiry.
+          token = await currentUser.getIdToken(false);
+        } catch (refreshErr: any) {
+          console.warn('[Fetch Interceptor] getIdToken failed:', refreshErr?.message);
+          token = '';
+        }
         if (token) {
           init = init || {};
           let headers = init.headers || {};
@@ -92,8 +102,31 @@ function App() {
   const [userToken, setUserToken] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const authResolved = React.useRef(false);
   const [appSettings, setAppSettings] = useState<any>(null);
   const socketRef = useRef<any>(null);
+
+  // Debounced versions of userToken and userData.id.
+  // Firebase fires onIdTokenChanged TWICE on cold-start (once from local cache,
+  // once after server validation). Without debouncing, every effect that depends
+  // on [userToken, userData?.id] runs twice: FCM setup and HomeScreen socket/fetching.
+  // We debounce by 350 ms – that's long enough for both fires to settle, but
+  // short enough that the user never notices.
+  const [stableToken, setStableToken] = useState<string | null>(null);
+  const [stableUserId, setStableUserId] = useState<string | null>(null);
+  const debounceTokenTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep stableToken / stableUserId in sync with userToken / userData, debounced.
+  useEffect(() => {
+    if (debounceTokenTimer.current) clearTimeout(debounceTokenTimer.current);
+    debounceTokenTimer.current = setTimeout(() => {
+      setStableToken(userToken);
+      setStableUserId(userData?.id ?? null);
+    }, 350);
+    return () => {
+      if (debounceTokenTimer.current) clearTimeout(debounceTokenTimer.current);
+    };
+  }, [userToken, userData?.id]);
 
   // Fetch Global App Settings
   useEffect(() => {
@@ -126,7 +159,16 @@ function App() {
   }, []);
 
   // Firebase Auth & Token Refresh Logic
+  // IMPORTANT: setLoading(false) is called here – AFTER Firebase first resolves
+  // the auth state – so we never briefly show the login screen on app open.
   useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      if (!authResolved.current) {
+        authResolved.current = true;
+        setLoading(false);
+      }
+    }, 5000);
+
     const unsubscribe = auth().onIdTokenChanged(async (user) => {
       console.log('[Auth] ID Token changed or user state changed');
       if (user) {
@@ -153,14 +195,25 @@ function App() {
         storage.removeItem('userData');
         setCurrentScreen('login');
       }
+
+      // Hide the splash/loading screen only after the first auth resolution.
+      if (!authResolved.current) {
+        authResolved.current = true;
+        setLoading(false);
+      }
     });
 
-    return unsubscribe;
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
   }, []);
 
   // FCM Setup
+  // Uses stableToken/stableUserId (debounced) so this only runs once even when
+  // Firebase fires onIdTokenChanged twice in quick succession on app open.
   useEffect(() => {
-    if (userToken && userData?.id && userData?.approvalStatus === 'approved') {
+    if (stableToken && stableUserId && userData?.approvalStatus === 'approved') {
       const initFCM = async () => {
         try {
           const hasPermission = await requestNotificationPermission();
@@ -168,11 +221,11 @@ function App() {
             await createNotificationChannels();
             const token = await messaging().getToken();
             console.log('[FCM] Token:', token);
-            await registerFCMToken(userData.id, token);
+            await registerFCMToken(stableUserId, token);
             
             // Listen for token refresh
             const unsubscribeTokenRefresh = messaging().onTokenRefresh(async newToken => {
-              await registerFCMToken(userData.id, newToken);
+              await registerFCMToken(stableUserId, newToken);
             });
 
             console.log('[FCM] Initializing listeners...');
@@ -193,23 +246,9 @@ function App() {
         if (typeof cleanup === 'function') (cleanup as any)();
       };
     }
-  }, [userToken, userData?.id, userData?.approvalStatus]);
+  }, [stableToken, stableUserId, userData?.approvalStatus]);
 
-  useEffect(() => {
-    const initApp = async () => {
-      console.log('[App] Initializing app...');
-      try {
-        // NOTE: Manual session check removed.
-        // Handled by onIdTokenChanged listener in useEffect above.
-      } catch (e) {
-        console.error('[App] Critical failure during init:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
 
-    initApp();
-  }, []);
 
 
   const handleLoginSuccess = (token: string, user: any) => {
@@ -272,7 +311,7 @@ function App() {
     }
 
     return (
-      <HomeScreen userData={userData} userToken={userToken} onLogout={handleLogout} />
+      <HomeScreen userData={userData} userToken={stableToken} onLogout={handleLogout} />
     );
 
   };

@@ -205,6 +205,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
     );
   }
 
+  if (showInfo) {
+    return (
+      <InfoScreen 
+        type={showInfo}
+        onBack={() => setShowInfo(null)}
+      />
+    );
+  }
+
   if (showProfile) {
     return (
       <ProfileScreen
@@ -216,15 +225,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
           setShowProfile(false);
           setShowMyDeliveries(true);
         }}
-      />
-    );
-  }
-
-  if (showInfo) {
-    return (
-      <InfoScreen 
-        type={showInfo}
-        onBack={() => setShowInfo(null)}
       />
     );
   }
