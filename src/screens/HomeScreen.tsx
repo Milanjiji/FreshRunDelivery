@@ -9,6 +9,7 @@ import {
   StatusBar,
   RefreshControl,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
@@ -35,6 +36,7 @@ import DebugMapScreen from './DebugMapScreen';
 import InfoScreen, { InfoType } from './InfoScreen';
 import HelpScreen from './HelpScreen';
 import TicketDetailsScreen from './TicketDetailsScreen';
+import WithdrawalRequestsScreen from './WithdrawalRequestsScreen';
 
 import { API_BASE_URL } from '../config/api';
 
@@ -59,6 +61,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
   const [showHelp, setShowHelp] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | number | null>(null);
   const [preAttachedHelpOrder, setPreAttachedHelpOrder] = useState<any>(null);
+  const [showWithdrawals, setShowWithdrawals] = useState(false);
+  const [withdrawalsBackToProfile, setWithdrawalsBackToProfile] = useState(false);
 
   // Dynamic state loaded from the backend APIs
   const [pickups, setPickups] = useState<any[]>([]);
@@ -159,6 +163,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
       socketRef.current.on('connect', () => {
         console.log('[HomeScreen] Socket connected');
         socketRef.current.emit('join_room', 'delivery_partners');
+        if (userData?.id) {
+          console.log('[HomeScreen] Joining user room:', `user_${userData.id}`);
+          socketRef.current.emit('join_room', `user_${userData.id}`);
+        }
         
         // Join rooms for all active deliveries
         deliveries.forEach(order => {
@@ -177,6 +185,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
         fetchBoth();
       });
 
+      socketRef.current.on('payout_status_updated', (data: any) => {
+        console.log('[HomeScreen] Socket payout_status_updated received:', data);
+        Alert.alert('Withdrawal Update', data.message);
+        fetchBoth();
+      });
+
       return () => {
         if (socketRef.current) {
           socketRef.current.disconnect();
@@ -184,7 +198,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
       };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userToken, deliveries.length, fetchBoth]);
+  }, [userToken, userData?.id, deliveries.length, fetchBoth]);
 
   // If Directions screen is overlayed
   if (selectedOrderForDirections) {
@@ -251,6 +265,22 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
     );
   }
 
+  if (showWithdrawals) {
+    return (
+      <WithdrawalRequestsScreen
+        userToken={userToken || ''}
+        userData={userProfile}
+        onBack={() => {
+          setShowWithdrawals(false);
+          if (withdrawalsBackToProfile) {
+            setShowProfile(true);
+          }
+        }}
+        onRefreshProfile={fetchUserProfile}
+      />
+    );
+  }
+
   if (showProfile) {
     return (
       <ProfileScreen
@@ -265,6 +295,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
         onHelpPress={() => {
           setShowProfile(false);
           setShowHelp(true);
+        }}
+        onEarningsPress={() => {
+          setShowProfile(false);
+          setShowWithdrawals(true);
+          setWithdrawalsBackToProfile(true);
         }}
       />
     );
@@ -375,14 +410,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ userData, userToken, onLogout }
           </View>
 
           {/* To Withdraw */}
-          <View style={styles.cubicCard}>
+          <TouchableOpacity 
+            style={styles.cubicCard}
+            onPress={() => {
+              setShowWithdrawals(true);
+              setWithdrawalsBackToProfile(false);
+            }}
+          >
             <View style={styles.cubicIconWrapSecondary}>
               <Wallet size={18} color={Colors.secondary} strokeWidth={2.5} />
             </View>
             <Text style={styles.cubicLabelDark} numberOfLines={1}>To Withdraw</Text>
             <Text style={styles.cubicValueDark} numberOfLines={1}>₹{parseFloat(userProfile?.withdrawableEarnings || 0).toFixed(0)}</Text>
             <Text style={styles.cubicStatusDark} numberOfLines={1}>Available</Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* ── TABS (Synchronized with Customer App Pill Style) ── */}

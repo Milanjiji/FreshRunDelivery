@@ -43,7 +43,7 @@ import { storage } from '../utils/storage';
 
 const PRIVACY_POLICY_URL = 'https://freshrun-admin.vercel.app/privacy';
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogout, onInfoPress, onMyDeliveriesPress, onHelpPress }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogout, onInfoPress, onMyDeliveriesPress, onHelpPress, onEarningsPress }) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [aadharExpanded, setAadharExpanded] = useState(false);
 
@@ -104,7 +104,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
   const quickLinks = [
     { id: 'q1', icon: <Package size={24} color="#333" />, label: 'My\nDeliveries', onPress: onMyDeliveriesPress },
     { id: 'q2', icon: <Star size={24} color="#333" />, label: 'Ratings' },
-    { id: 'q3', icon: <Wallet size={24} color="#333" />, label: 'Earnings' },
+    { id: 'q3', icon: <Wallet size={24} color="#333" />, label: 'Earnings', onPress: onEarningsPress },
     { id: 'q4', icon: <LifeBuoy size={24} color="#333" />, label: 'Support', onPress: () => onHelpPress && onHelpPress() },
   ];
 
@@ -329,6 +329,7 @@ interface ProfileScreenProps {
   onInfoPress: (type: 'about' | 'privacy' | 'terms' | 'refund' | 'shipping' | 'contact') => void;
   onMyDeliveriesPress?: () => void;
   onHelpPress?: () => void;
+  onEarningsPress?: () => void;
 }
 
 const styles = StyleSheet.create({
