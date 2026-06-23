@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Landmark, CreditCard, User, Info, Camera, Trash2 } from 'lucide-react-native';
-import axios from 'axios';
+import api from '../utils/api';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { storage } from '../utils/storage';
 import { PageTitle, PageSubtitle } from '../components/Typography';
@@ -100,7 +100,7 @@ const PaymentOnboardingScreen: React.FC<PaymentOnboardingScreenProps> = ({ onBac
     setLoading(true);
     try {
       const token = storage.getString('userToken');
-      const response = await axios.post(`${API_BASE_URL}/payments/onboard`, {
+      const response = await api.post('/payments/onboard', {
         role: 'delivery',
         upiId,
         upiQrImage,
@@ -108,8 +108,6 @@ const PaymentOnboardingScreen: React.FC<PaymentOnboardingScreenProps> = ({ onBac
         email: userData.email,
         phone: userData.phone,
         delivery_preference: deliveryPreference ? 'cash_only_while_pending' : 'wait_for_online'
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
 
       if (response.data.success) {

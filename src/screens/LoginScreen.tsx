@@ -15,6 +15,7 @@ import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import axios from 'axios';
+import api from '../utils/api';
 import { storage } from '../utils/storage';
 import { PageTitle, PageSubtitle } from '../components/Typography';
 import { PrimaryButton } from '../components/Button';
@@ -79,7 +80,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
 
       // --- Pre-OTP Check (Case 1 & 2) ---
       try {
-        const checkRes = await axios.get(`${BACKEND_URL}/auth/check-partner/${sanitizedPhone}`, {
+        const checkRes = await api.get(`/auth/check-partner/${sanitizedPhone}`, {
           timeout: BACKEND_REQUEST_TIMEOUT_MS
         });
 
@@ -150,8 +151,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
           BACKEND_REQUEST_TIMEOUT_MS,
           'Timed out while fetching the Firebase token. Please try again.',
         );
-        const response = await axios.post(
-          `${BACKEND_URL}/auth/login`,
+        const response = await api.post(
+          '/auth/login',
           { idToken, role },
           { timeout: BACKEND_REQUEST_TIMEOUT_MS }
         );

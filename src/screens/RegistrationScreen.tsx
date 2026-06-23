@@ -16,7 +16,7 @@ import {
 import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, ChevronLeft, Trash2, ChevronRight, Landmark, CreditCard, User } from 'lucide-react-native';
-import axios from 'axios';
+import api from '../utils/api';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { storage } from '../utils/storage';
@@ -168,7 +168,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
     setLoading(true);
     try {
       if (!isUpdate) {
-        const checkRes = await axios.get(`${BACKEND_URL}/auth/check-partner/${sanitizedPhone}`);
+        const checkRes = await api.get(`/auth/check-partner/${sanitizedPhone}`);
         if (checkRes.data.success && checkRes.data.exists) {
           setLoading(false);
           Alertt.alert(
@@ -243,7 +243,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
       aadharImage,
     };
 
-    const response = await axios.post(`${BACKEND_URL}/auth/register`, payload);
+    const response = await api.post('/auth/register', payload);
     if (response.data.success) {
       const { user } = response.data;
       
@@ -257,8 +257,8 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onBack, onRegis
         phone: phoneNumber
       };
 
-      const onboardResponse = await axios.post(
-        `${BACKEND_URL}/payments/onboard`,
+      const onboardResponse = await api.post(
+        '/payments/onboard',
         onboardPayload,
         { headers: { Authorization: `Bearer ${idToken}` } }
       );

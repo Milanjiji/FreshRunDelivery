@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import axios from 'axios';
+import api from '../utils/api';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Colors } from '../theme/colors';
 import { Fonts } from '../theme/typography';
@@ -54,9 +54,7 @@ const TicketDetailsScreen: React.FC<TicketDetailsScreenProps> = ({
 
   const fetchTicketDetails = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/support/tickets/${ticketId}`, {
-        headers: { Authorization: `Bearer ${userToken}` },
-      });
+      const res = await api.get(`/support/tickets/${ticketId}`);
       if (res.data.success) {
         setTicket(res.data.ticket);
         setReplies(res.data.replies || []);
@@ -127,9 +125,7 @@ const TicketDetailsScreen: React.FC<TicketDetailsScreenProps> = ({
         sender_type: 'user',
       };
 
-      const res = await axios.post(`${API_BASE_URL}/support/tickets/${ticketId}/replies`, payload, {
-        headers: { Authorization: `Bearer ${userToken}` },
-      });
+      const res = await api.post(`/support/tickets/${ticketId}/replies`, payload);
 
       if (res.data.success) {
         setReplies(prev => [...prev, res.data.reply]);

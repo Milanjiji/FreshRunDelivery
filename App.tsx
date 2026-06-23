@@ -117,6 +117,7 @@ function injectAuthHeader(headers: any, token: string) {
 const originalFetch = (globalThis as any).fetch;
 (globalThis as any).fetch = async (input: any, init?: any) => {
   if (typeof input === 'string' && input.startsWith(API_BASE_URL)) {
+    console.log('[AuthTrace][Fetch] Intercepted fetch call to backend API:', input);
     try {
       const currentUser = auth().currentUser;
       if (currentUser) {
@@ -124,14 +125,14 @@ const originalFetch = (globalThis as any).fetch;
 
         // If the token is missing or expired, fetch a fresh one before the call
         if (!token || isTokenExpired(token)) {
-          console.log('[Fetch Interceptor] Token expired or missing. Refreshing before API call...');
+          console.log('[AuthTrace][Fetch] Token expired or missing. Refreshing before API call...');
           try {
             token = await currentUser.getIdToken(true);
             if (token) {
               storage.setItem('userToken', token);
             }
           } catch (refreshErr) {
-            console.error('[Fetch Interceptor] Failed to force-refresh token:', refreshErr);
+            console.error('[AuthTrace][Fetch] Failed to force-refresh token:', refreshErr);
           }
         }
 
@@ -150,7 +151,7 @@ const originalFetch = (globalThis as any).fetch;
         }
       }
     } catch (error) {
-      console.error('[Fetch Interceptor] Error in proactive token check:', error);
+      console.error('[AuthTrace][Fetch] Error in proactive token check:', error);
     }
   }
   return originalFetch(input, init);
@@ -221,7 +222,7 @@ function App() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (nextAppState === 'active') {
-        console.log('[Auth] App moved to foreground - proactively refreshing session...');
+        console.log('[AuthTrace][Foreground] App moved to foreground - proactively refreshing session...');
         try {
           const currentUser = auth().currentUser;
           if (currentUser) {
@@ -229,11 +230,11 @@ function App() {
             if (freshToken) {
               setUserToken(freshToken);
               storage.setItem('userToken', freshToken);
-              console.log('[Auth] Session successfully renewed proactively on foreground.');
+              console.log('[AuthTrace][Foreground] Session successfully renewed proactively on foreground.');
             }
           }
         } catch (err) {
-          console.warn('[Auth] Proactive session refresh failed:', err);
+          console.warn('[AuthTrace][Foreground] Proactive session refresh failed:', err);
         }
       }
     });
@@ -255,11 +256,11 @@ function App() {
     }, 5000);
 
     const unsubscribe = auth().onIdTokenChanged(async (user) => {
-      console.log('[Auth] ID Token changed or user state changed');
+      console.log('[AuthTrace][Startup] onIdTokenChanged triggered. User present:', !!user);
       if (user) {
         try {
           const idToken = await user.getIdToken();
-          console.log('[Auth] New ID Token acquired');
+          console.log('[AuthTrace][Startup] New ID Token acquired from Firebase SDK');
           
           setUserToken(idToken);
           storage.setItem('userToken', idToken);
@@ -270,10 +271,23 @@ function App() {
             setUserData(currentData);
           }
         } catch (e) {
-          console.error('[Auth] Error getting ID token:', e);
+          console.error('[AuthTrace][Startup] Error getting ID token from Firebase SDK:', e);
+          const cachedToken = storage.getString('userToken');
+          if (cachedToken) {
+            console.log('[AuthTrace][Startup] Startup recovery: successfully restored session from MMKV cache due to network failure.');
+            setUserToken(cachedToken);
+            const currentData = storage.getObject<any>('userData');
+            if (currentData) {
+              setUserData(currentData);
+            }
+          } else {
+            console.log('[AuthTrace][Startup] Startup recovery failed: no cached token. Routing to Login.');
+            setUserToken(null);
+            setCurrentScreen('login');
+          }
         }
       } else {
-        console.log('[Auth] User is signed out');
+        console.log('[AuthTrace][Startup] User is signed out on Firebase SDK');
         setUserToken(null);
         setUserData(null);
         storage.removeItem('userToken');

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import axios from 'axios';
+import api from '../utils/api';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { Colors } from '../theme/colors';
 import { Fonts } from '../theme/typography';
@@ -99,9 +99,7 @@ const HelpScreen: React.FC<HelpScreenProps> = ({
   const fetchUserTickets = async () => {
     setLoadingTickets(true);
     try {
-      const res = await axios.get(`${API_BASE_URL}/support/tickets`, {
-        headers: { Authorization: `Bearer ${userToken}` },
-      });
+      const res = await api.get('/support/tickets');
       if (res.data.success) {
         setTickets(res.data.tickets || []);
       }
@@ -115,9 +113,7 @@ const HelpScreen: React.FC<HelpScreenProps> = ({
   const fetchPartnerDeliveries = async () => {
     setLoadingOrders(true);
     try {
-      const res = await axios.get(`${API_BASE_URL}/orders/partner?history=true`, {
-        headers: { Authorization: `Bearer ${userToken}` },
-      });
+      const res = await api.get('/orders/partner?history=true');
       if (res.data.success) {
         setOrders(res.data.orders || []);
       }
@@ -199,9 +195,7 @@ const HelpScreen: React.FC<HelpScreenProps> = ({
         upi_qr_url: null,
       };
 
-      const res = await axios.post(`${API_BASE_URL}/support/tickets`, payload, {
-        headers: { Authorization: `Bearer ${userToken}` },
-      });
+      const res = await api.post('/support/tickets', payload);
 
       if (res.data.success) {
         Alertt.alert('Ticket Submitted', 'Our support team has received your ticket and will verify the details soon.');
