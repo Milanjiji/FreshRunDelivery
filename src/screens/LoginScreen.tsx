@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Alertt } from '../components/Alertt';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import auth from '@react-native-firebase/auth';
 import axios from 'axios';
 import api from '../utils/api';
 import { storage } from '../utils/storage';
@@ -52,20 +52,12 @@ const withTimeout = async <T,>(
   }
 };
 
-const getAuthErrorMessage = (error: any, fallbackMessage: string) => {
-  const errorCode = error?.code;
-  if (errorCode === 'auth/invalid-phone-number') return 'Please enter a valid phone number.';
-  if (errorCode === 'auth/too-many-requests') return 'Too many OTP attempts. Please wait a bit and try again.';
-  if (errorCode === 'auth/network-request-failed') return 'Network error while contacting Firebase. Please check your internet and try again.';
-  if (errorCode === 'auth/invalid-verification-code') return 'The OTP you entered is invalid. Please try again.';
-  if (errorCode === 'auth/code-expired') return 'This OTP has expired. Please request a new one.';
-  return error?.message || fallbackMessage;
-};
+
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavigateToRegister }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [code, setCode] = useState('');
-  const [confirm, setConfirm] = useState<FirebaseAuthTypes.ConfirmationResult | null>(null);
+  const [confirm, setConfirm] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
 
   const signInWithPhoneNumber = async () => {
@@ -118,19 +110,22 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
         }
       } catch (err) {
         console.warn('Pre-OTP check failed, proceeding with fallback:', err);
-        // We continue if the check fails due to network, but it's safer to block.
-        // For now, let's just log and proceed.
       }
 
       const formattedNumber = `+91${sanitizedPhone}`;
-      const confirmation = await withTimeout(
-        auth().signInWithPhoneNumber(formattedNumber),
+      console.log('Sending OTP via backend to:', formattedNumber);
+      await withTimeout(
+        api.post('/auth/send-otp', { phoneNumber: formattedNumber }),
         OTP_REQUEST_TIMEOUT_MS,
         'OTP request timed out. Please try again.',
       );
-      setConfirm(confirmation);
+
+      setConfirm(true);
     } catch (error: any) {
-      Alertt.alert('Login Failed', getAuthErrorMessage(error, 'Could not send OTP'));
+      const message = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message || 'Could not send OTP'
+        : error.message || 'Could not send OTP';
+      Alertt.alert('Login Failed', message);
     } finally {
       setLoading(false);
     }
@@ -143,34 +138,46 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
     }
     setLoading(true);
     try {
-      if (!confirm) return;
-      const credential = await confirm.confirm(code);
-      if (credential?.user) {
+      const sanitizedPhone = phoneNumber.replace(/\D/g, '');
+      const formattedNumber = `+91${sanitizedPhone}`;
+      
+      console.log('Verifying code via backend:', code);
+      const response = await withTimeout(
+        api.post('/auth/verify-otp', {
+          phoneNumber: formattedNumber,
+          code,
+          role,
+        }),
+        BACKEND_REQUEST_TIMEOUT_MS,
+        'Timed out verifying OTP. Please try again.',
+      );
+
+      if (response.data.success) {
+        const { customToken, user } = response.data;
+        console.log('OTP verified. Signing in with custom token...');
+
+        // Sign in to Firebase with the custom token
+        const userCredential = await auth().signInWithCustomToken(customToken);
+        const firebaseUser = userCredential.user;
+
+        // Get standard ID Token
         const idToken = await withTimeout(
-          credential.user.getIdToken(),
+          firebaseUser.getIdToken(),
           BACKEND_REQUEST_TIMEOUT_MS,
           'Timed out while fetching the Firebase token. Please try again.',
         );
-        const response = await api.post(
-          '/auth/login',
-          { idToken, role },
-          { timeout: BACKEND_REQUEST_TIMEOUT_MS }
-        );
-        if (response.data.success) {
-          const { user } = response.data;
-          
-          // Store Firebase ID Token as the session token
-          storage.setItem('userToken', idToken);
-          storage.setItem('userData', user);
-          onLoginSuccess(idToken, user);
-        } else {
-          throw new Error(response.data.error || 'Backend authentication failed');
-        }
+
+        console.log('Firebase session ready. Storing token...');
+        storage.setItem('userToken', idToken);
+        storage.setItem('userData', user);
+        onLoginSuccess(idToken, user);
+      } else {
+        throw new Error(response.data.error || 'Verification failed');
       }
     } catch (error: any) {
       const message = axios.isAxiosError(error)
-        ? error.response?.data?.error || error.message || 'Backend authentication failed'
-        : getAuthErrorMessage(error, 'Invalid OTP');
+        ? error.response?.data?.error || error.message || 'Invalid OTP'
+        : error.message || 'Invalid OTP';
       Alertt.alert('Verification Failed', message);
     } finally {
       setLoading(false);
@@ -227,7 +234,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, role, onNavig
                       placeholderTextColor={Colors.textLight}
                     />
                   </View>
-                  <TouchableOpacity style={styles.resendBtn} onPress={() => setConfirm(null)}>
+                  <TouchableOpacity style={styles.resendBtn} onPress={() => setConfirm(false)}>
                     <Text style={styles.resendText}>Change Phone Number?</Text>
                   </TouchableOpacity>
                 </View>
