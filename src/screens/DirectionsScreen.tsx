@@ -112,6 +112,25 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
   const [localCompleted, setLocalCompleted] = useState<boolean>(order?.is_completed || false);
   const orderData = resolvedOrder || order;
 
+  // Defensively parse picked_up_stores to guarantee a Javascript string array
+  const getPickedUpStoresArray = (): string[] => {
+    const raw = orderData?.picked_up_stores;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map(String);
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch (e) {
+        if (raw.trim().startsWith('[')) return [];
+        return raw.split(',').map(s => s.trim());
+      }
+    }
+    return [];
+  };
+
+  const pickedUpStores = getPickedUpStoresArray();
+
   const [showDisclosure, setShowDisclosure] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
 
@@ -659,8 +678,9 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
 
 
-  const allStoresPickedUp = orderData?.stores && orderData.stores.length > 0
-    ? orderData.stores.every((s: any) => (orderData.picked_up_stores || []).includes(s.id))
+  // If it's a single store order (or stores data is missing), no individual store pickups are required
+  const allStoresPickedUp = orderData?.stores && orderData.stores.length > 1
+    ? orderData.stores.every((s: any) => pickedUpStores.includes(String(s.id)))
     : true;
 
   return (
@@ -698,7 +718,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
                 const sLat = parseCoordinate(s.latitude);
                 const sLng = parseCoordinate(s.longitude);
                 if (sLat === null || sLng === null) return null;
-                const isPicked = (orderData.picked_up_stores || []).includes(s.id);
+                const isPicked = pickedUpStores.includes(String(s.id));
                 return (
                   <Marker
                     key={s.id}
@@ -731,7 +751,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
 
             {directionsOrigin && (
               <MapViewDirections
-                key={`${localStatus}-${localGivenToDelivery}-${orderData.driver_issue_status}-${orderData.picked_up_stores?.length || 0}`}
+                key={`${localStatus}-${localGivenToDelivery}-${orderData.driver_issue_status}-${pickedUpStores.length}`}
                 origin={directionsOrigin}
                 destination={
                   (orderData.driver_issue_status && orderData.return_to_store_status !== 'returned' && storeLat !== null && storeLng !== null)
@@ -744,7 +764,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
                   (!localGivenToDelivery && !orderData.driver_issue_status)
                     ? (orderData?.stores && orderData.stores.length > 0
                         ? orderData.stores
-                            .filter((s: any) => !(orderData.picked_up_stores || []).includes(s.id))
+                            .filter((s: any) => !pickedUpStores.includes(String(s.id)))
                             .map((s: any) => ({ latitude: parseFloat(s.latitude), longitude: parseFloat(s.longitude) }))
                         : (storeLat !== null && storeLng !== null ? [{ latitude: storeLat, longitude: storeLng }] : [])
                       )
@@ -855,7 +875,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
             <Text style={styles.sectionTitle}>Pickup Points</Text>
             {orderData.stores && orderData.stores.length > 0 ? (
               orderData.stores.map((s: any, idx: number) => {
-                const isPicked = (orderData.picked_up_stores || []).includes(s.id);
+                const isPicked = pickedUpStores.includes(String(s.id));
                 return (
                   <View key={s.id || idx} style={[styles.card, { marginBottom: 10 }]}>
                     <View style={[styles.cardIconCircle, isPicked && { backgroundColor: '#e2f2e6' }]}>
@@ -868,7 +888,7 @@ const DirectionsScreen: React.FC<DirectionsScreenProps> = ({
                         <Text style={styles.cardSubText}>{s.address_line || 'Store location address line'}</Text>
                       </View>
                     </View>
-                    {localOpted && !localGivenToDelivery && (
+                    {localOpted && !localGivenToDelivery && orderData.stores.length > 1 && (
                       isPicked ? (
                         <View style={[styles.phoneBtn, { backgroundColor: '#e2f2e6', borderWidth: 1, borderColor: Colors.success }]}>
                           <Icon name="checkmark" size={18} color={Colors.success} />

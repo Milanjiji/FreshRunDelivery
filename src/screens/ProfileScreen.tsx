@@ -237,6 +237,29 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userData, onBack, onLogou
           ))}
         </View>
 
+        {/* ── TODAY'S EARNINGS CARD ────────────────────────── */}
+        <View style={styles.sectionLabel}>
+          <Text style={styles.sectionLabelText}>EARNINGS</Text>
+        </View>
+
+        <View style={styles.earningsRow}>
+          <View style={styles.earningsTile}>
+            <Text style={styles.earningsTileLabel}>Today</Text>
+            <Text style={styles.earningsTileValue}>₹{parseFloat(userData?.todayEarnings ?? 0).toFixed(0)}</Text>
+            <Text style={styles.earningsTileSub}>Today's pay</Text>
+          </View>
+          <View style={[styles.earningsTile, styles.earningsTileDark]}>
+            <Text style={styles.earningsTileLabelDark}>Total</Text>
+            <Text style={styles.earningsTileValueDark}>₹{parseFloat(userData?.totalEarnings ?? 0).toFixed(0)}</Text>
+            <Text style={styles.earningsTileSubDark}>All-time earnings</Text>
+          </View>
+          <View style={styles.earningsTile}>
+            <Text style={styles.earningsTileLabel}>Available</Text>
+            <Text style={[styles.earningsTileValue, { color: '#10b981' }]}>₹{parseFloat(userData?.withdrawableEarnings ?? 0).toFixed(0)}</Text>
+            <Text style={styles.earningsTileSub}>Withdrawable</Text>
+          </View>
+        </View>
+
         {/* ── AADHAR CARD IMAGE ───────────────────────────── */}
         {userData?.aadharImage && (
           <>
@@ -549,6 +572,70 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: Fonts.regular,
     color: Colors.textLight,
+  },
+
+  // Earnings tiles
+  earningsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 15,
+    gap: 8,
+    marginBottom: 20,
+  },
+  earningsTile: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  earningsTileDark: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  earningsTileLabel: {
+    fontSize: 9,
+    fontFamily: Fonts.semiBold,
+    color: Colors.textLight,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  },
+  earningsTileValue: {
+    fontSize: 18,
+    fontFamily: Fonts.black,
+    fontWeight: '900',
+    color: '#1a1a1a',
+  },
+  earningsTileSub: {
+    fontSize: 8.5,
+    fontFamily: Fonts.regular,
+    color: Colors.textLight,
+    marginTop: 3,
+    textAlign: 'center',
+  },
+  earningsTileLabelDark: {
+    fontSize: 9,
+    fontFamily: Fonts.semiBold,
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  },
+  earningsTileValueDark: {
+    fontSize: 18,
+    fontFamily: Fonts.black,
+    fontWeight: '900',
+    color: Colors.white,
+  },
+  earningsTileSubDark: {
+    fontSize: 8.5,
+    fontFamily: Fonts.regular,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 3,
+    textAlign: 'center',
   },
 
   // Modal

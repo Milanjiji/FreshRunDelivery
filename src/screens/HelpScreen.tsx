@@ -237,14 +237,14 @@ const HelpScreen: React.FC<HelpScreenProps> = ({
 
         {/* Action Direct Channels */}
         <View style={styles.channelsRow}>
-          <TouchableOpacity onPress={() => Linking.openURL('tel:9088568423')} style={styles.channelCard}>
+          <TouchableOpacity onPress={() => Linking.openURL('tel:+917044830482')} style={styles.channelCard}>
             <View style={[styles.channelIcon, { backgroundColor: '#EBF3FF' }]}>
               <Icon name="call" size={22} color={Colors.primary} />
             </View>
             <Text style={styles.channelLabel}>Call Support</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => Linking.openURL('https://wa.me/919088568423?text=Hi%20FreshRush%20Partner%20Support')} style={styles.channelCard}>
+          <TouchableOpacity onPress={() => Linking.openURL('https://wa.me/917044830482?text=Hi%20FreshRush%20Partner%20Support')} style={styles.channelCard}>
             <View style={[styles.channelIcon, { backgroundColor: '#E8F8F0' }]}>
               <Icon name="logo-whatsapp" size={22} color="#25D366" />
             </View>
